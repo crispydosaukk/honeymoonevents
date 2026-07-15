@@ -1098,16 +1098,14 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
 
   const confirmFinalPayment = async (id: string, method: string) => {
     const currentBooking = bookings.find(b => b.id === id);
-    const extraProof = currentBooking?.paymentProofFinal || '';
     
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, finalPaymentPaid: true, status: 'final_payment_received', paymentMethodFinal: method, paymentProofExtra: b.paymentProofExtra || extraProof } : b));
-    setSelectedBooking(prev => prev?.id === id ? { ...prev, finalPaymentPaid: true, status: 'final_payment_received', paymentMethodFinal: method, paymentProofExtra: prev.paymentProofExtra || extraProof } : prev);
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, finalPaymentPaid: true, status: 'final_payment_received', paymentMethodFinal: method } : b));
+    setSelectedBooking(prev => prev?.id === id ? { ...prev, finalPaymentPaid: true, status: 'final_payment_received', paymentMethodFinal: method } : prev);
     try {
       await setDoc(doc(db, 'booking_requests', id), { 
         finalPaymentPaid: true, 
         status: 'final_payment_received', 
-        paymentMethodFinal: method, 
-        paymentProofExtra: currentBooking?.paymentProofExtra || extraProof 
+        paymentMethodFinal: method
       }, { merge: true });
       if (currentBooking) {
         const bookingData = {
@@ -1115,7 +1113,6 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
           finalPaymentPaid: true,
           status: 'final_payment_received',
           paymentMethodFinal: method,
-          paymentProofExtra: currentBooking.paymentProofExtra || extraProof,
           updatedAt: new Date().toISOString()
         };
         const cleanBookingData = Object.fromEntries(
@@ -1425,7 +1422,14 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
     return food + (hall?.amount || 0);
   };
 
-  const downloadInvoicePDF = (booking: Booking) => {
+  const downloadInvoicePDF = (bookingData: Booking, isDepositOnly: boolean = false) => {
+    const booking = { ...bookingData };
+    if (isDepositOnly) {
+      booking.finalPaymentPaid = false;
+      booking.paymentProofFinal = undefined;
+      booking.paymentProofExtra = undefined;
+      booking.status = 'deposit_confirmed';
+    }
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
@@ -3075,14 +3079,24 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
                         <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[b.status]}`} />
                         {STATUS_LABELS[b.status]}
                       </span>
-                      <button
-                        onClick={() => downloadInvoicePDF(b)}
-                        className="text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 p-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-amber-200 shadow-sm"
-                        title="Download Invoice PDF"
-                      >
-                        <Icon name="ArrowDownTrayIcon" size={14} />
-                        PDF
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => downloadInvoicePDF(b, true)}
+                          className="text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold border border-emerald-200 shadow-sm"
+                          title="Download Deposit Invoice PDF"
+                        >
+                          <Icon name="ArrowDownTrayIcon" size={14} />
+                          Deposit Invoice
+                        </button>
+                        <button
+                          onClick={() => downloadInvoicePDF(b)}
+                          className="text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold border border-amber-200 shadow-sm"
+                          title="Download Final Invoice PDF"
+                        >
+                          <Icon name="ArrowDownTrayIcon" size={14} />
+                          Final Invoice
+                        </button>
+                      </div>
                       {currentUser?.role === 'Super Admin' && (
                         <button onClick={() => handleDeleteBooking(b.id, b.name)} className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 p-1.5 rounded-lg transition-colors" title="Delete History Record">
                           <Icon name="TrashIcon" size={14} />
@@ -5261,6 +5275,13 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
               )}
               {selectedBooking.status === 'deposit_confirmed' && (
                 <div className="space-y-2">
+                  <button
+                    onClick={() => downloadInvoicePDF(selectedBooking)}
+                    className="w-full font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 transition-all border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 shadow-sm"
+                  >
+                    <Icon name="ArrowDownTrayIcon" size={16} />
+                    Download Deposit Invoice
+                  </button>
                   {!selectedBooking.dueDate ? (
                     <div className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed">
                       <Icon name="LockClosedIcon" size={15} />
