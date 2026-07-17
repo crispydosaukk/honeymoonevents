@@ -1864,6 +1864,15 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
     return bTime - aTime;
   });
 
+  const historyBookings = bookings.filter(b => {
+    const statusIndex = STATUS_FLOW.indexOf(b.status);
+    return statusIndex >= STATUS_FLOW.indexOf('deposit_confirmed');
+  }).sort((a, b) => {
+    const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : new Date(a.date).getTime());
+    const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : new Date(b.date).getTime());
+    return bTime - aTime;
+  });
+
   // Derive real-time customers dynamically from the live bookings list
   const customers: Customer[] = useMemo(() => {
     const customerMap: Record<string, Customer> = {};
@@ -2095,7 +2104,7 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
                 {activeTab === 'customers' && `${customers.length} registered customers`}
                 {activeTab === 'payments' && 'Track deposits and balances'}
                 {activeTab === 'menus' && 'Manage catering packages'}
-                {activeTab === 'history' && `${completedBookings.length} completed bookings`}
+                {activeTab === 'history' && `${historyBookings.length} history records`}
                 {activeTab === 'settings' && 'Venue configuration'}
                 {activeTab === 'access' && 'Manage roles and permissions'}
                 {activeTab === 'discount_approvals' && 'Review discount requests'}
@@ -3060,9 +3069,9 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
                   <Icon name="MagnifyingGlassIcon" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input type="text" placeholder="Search history..." value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none bg-white" />
                 </div>
-                <span className="text-xs text-gray-400">{completedBookings.length} completed</span>
+                <span className="text-xs text-gray-400">{historyBookings.length} records</span>
               </div>
-              {completedBookings.filter(b => !historySearch || b.name.toLowerCase().includes(historySearch.toLowerCase()) || b.email.toLowerCase().includes(historySearch.toLowerCase()) || b.phone.toLowerCase().includes(historySearch.toLowerCase()) || b.eventType.toLowerCase().includes(historySearch.toLowerCase())).map((b) => (
+              {historyBookings.filter(b => !historySearch || b.name.toLowerCase().includes(historySearch.toLowerCase()) || b.email.toLowerCase().includes(historySearch.toLowerCase()) || b.phone.toLowerCase().includes(historySearch.toLowerCase()) || b.eventType.toLowerCase().includes(historySearch.toLowerCase())).map((b) => (
                 <div key={b.id} className="bg-white rounded-xl border border-gray-200 p-5">
                   <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
                     <div className="flex items-center gap-3">
@@ -3088,14 +3097,16 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
                           <Icon name="ArrowDownTrayIcon" size={14} />
                           Deposit Invoice
                         </button>
-                        <button
-                          onClick={() => downloadInvoicePDF(b)}
-                          className="text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold border border-amber-200 shadow-sm"
-                          title="Download Final Invoice PDF"
-                        >
-                          <Icon name="ArrowDownTrayIcon" size={14} />
-                          Final Invoice
-                        </button>
+                        {b.status === 'completed' && (
+                          <button
+                            onClick={() => downloadInvoicePDF(b)}
+                            className="text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold border border-amber-200 shadow-sm"
+                            title="Download Final Invoice PDF"
+                          >
+                            <Icon name="ArrowDownTrayIcon" size={14} />
+                            Final Invoice
+                          </button>
+                        )}
                       </div>
                       {currentUser?.role === 'Super Admin' && (
                         <button onClick={() => handleDeleteBooking(b.id, b.name)} className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 p-1.5 rounded-lg transition-colors" title="Delete History Record">
@@ -3203,7 +3214,7 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
                   {b.notes && <div className="mt-3 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">{b.notes}</div>}
                 </div>
               ))}
-              {completedBookings.length === 0 && (
+              {historyBookings.length === 0 && (
                 <div className="bg-white rounded-xl border border-gray-200 py-16 text-center">
                   <Icon name="ArchiveBoxIcon" size={36} className="mx-auto mb-3 text-gray-300" />
                   <p className="text-gray-400 text-sm">No completed bookings yet</p>
