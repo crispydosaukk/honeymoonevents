@@ -8,6 +8,8 @@ import { auth, db, storage } from '@/lib/firebase';
 import { collection, onSnapshot, query, where, orderBy, doc, setDoc, deleteDoc, getDoc, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import AccessControl from '@/components/admin/AccessControl';
+import ManualBookingForm from '@/components/admin/ManualBookingForm';
+import ExtraChargesSettings, { ConfiguredExtraCharge, DEFAULT_CONFIGURED_CHARGES } from '@/components/admin/ExtraChargesSettings';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
@@ -246,7 +248,7 @@ function buildWhatsAppLink(phone: string, message: string) {
   return `https://wa.me/${cleaned}?text=${encodeURIComponent(message)}`;
 }
 
-type AdminTab = 'overview' | 'enquiries' | 'bookings' | 'calendar' | 'customers' | 'payments' | 'menus' | 'history' | 'settings' | 'access' | 'discount_approvals' | 'tracker';
+type AdminTab = 'overview' | 'enquiries' | 'bookings' | 'manual_booking' | 'calendar' | 'customers' | 'payments' | 'menus' | 'history' | 'settings' | 'access' | 'discount_approvals' | 'tracker';
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 
@@ -427,6 +429,20 @@ export default function AdminPage() {
 
   const [blockedDates, setBlockedDates] = useState<string[]>([]);
   const [blockDateInput, setBlockDateInput] = useState('');
+
+  const [configuredExtraCharges, setConfiguredExtraCharges] = useState<ConfiguredExtraCharge[]>(DEFAULT_CONFIGURED_CHARGES);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'site_data', 'extra_charges_config'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (Array.isArray(data.charges) && data.charges.length > 0) {
+          setConfiguredExtraCharges(data.charges);
+        }
+      }
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'blocked_dates'), (snapshot) => {
@@ -806,6 +822,25 @@ Please transfer this outstanding balance to:
 Once paid, please send a screenshot of the transfer confirmation here so we can finalize and close your booking. Thank you! 🙏`;
   };
 
+  const buildFinalPaymentBankWhatsAppText = (booking: Booking, bank: typeof bankDetails) => {
+    const grandTotal = getTotalAmount(booking);
+    const remainingBalance = Math.max(0, grandTotal - booking.deposit);
+
+    return `Hi ${booking.name.split(' ')[0]},
+
+Regarding your ${booking.eventType} booking on ${booking.date} (Booking Ref: *${booking.id}*) with Honeymoon Events 🎉:
+
+*💰 Final Balance Due: £${remainingBalance.toLocaleString()}*
+
+Please transfer this balance to our official bank account:
+🏦 *Account Name:* ${bank.accountName}
+📋 *Sort Code:* ${bank.sortCode}
+🔢 *Account Number:* ${bank.accountNumber}
+📌 *Payment Reference:* ${booking.id}
+
+Once you have completed the transfer, please send us a screenshot of the payment confirmation here. After payment confirmation, your order will be officially closed and completed. Thank you! 🙏`;
+  };
+
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -1098,30 +1133,42 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
 
   const confirmFinalPayment = async (id: string, method: string) => {
     const currentBooking = bookings.find(b => b.id === id);
+    const nowIso = new Date().toISOString();
     
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, finalPaymentPaid: true, status: 'final_payment_received', paymentMethodFinal: method } : b));
-    setSelectedBooking(prev => prev?.id === id ? { ...prev, finalPaymentPaid: true, status: 'final_payment_received', paymentMethodFinal: method } : prev);
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, finalPaymentPaid: true, status: 'completed', paymentMethodFinal: method } : b));
+    setSelectedBooking(prev => prev?.id === id ? { ...prev, finalPaymentPaid: true, status: 'completed', paymentMethodFinal: method } : prev);
     try {
       await setDoc(doc(db, 'booking_requests', id), { 
         finalPaymentPaid: true, 
-        status: 'final_payment_received', 
-        paymentMethodFinal: method
+        status: 'completed', 
+        paymentMethodFinal: method,
+        orderClosedAt: nowIso,
+        updatedAt: nowIso,
       }, { merge: true });
       if (currentBooking) {
         const bookingData = {
           ...currentBooking,
           finalPaymentPaid: true,
-          status: 'final_payment_received',
+          status: 'completed',
           paymentMethodFinal: method,
-          updatedAt: new Date().toISOString()
+          orderClosedAt: nowIso,
+          updatedAt: nowIso,
         };
         const cleanBookingData = Object.fromEntries(
           Object.entries(bookingData).filter(([_, v]) => v !== undefined)
         );
         await setDoc(doc(db, 'bookings', id), cleanBookingData, { merge: true });
       }
-    } catch (error) {
+      setCustomAlert({
+        message: `Final payment via ${method} confirmed successfully! Order #${id} is now closed and marked as completed.`,
+        type: 'success'
+      });
+    } catch (error: any) {
       console.error('Error confirming final payment in database:', error);
+      setCustomAlert({
+        message: `Error confirming final payment: ${error?.message || 'Please try again.'}`,
+        type: 'error'
+      });
     }
   };
 
@@ -1953,6 +2000,7 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
     { id: 'overview', label: 'Overview', icon: 'Squares2X2Icon' },
     { id: 'enquiries', label: 'Enquiries', icon: 'InboxIcon', badge: stats.newEnquiries, requiredPerm: 'manage_enquiries' },
     { id: 'bookings', label: 'Bookings', icon: 'CalendarDaysIcon', badge: activeBookings.length || undefined, requiredPerm: 'manage_bookings' },
+    { id: 'manual_booking', label: 'Manual Booking', icon: 'PlusCircleIcon', requiredPerm: 'manage_bookings' },
     { id: 'calendar', label: 'Calendar', icon: 'CalendarIcon', requiredPerm: 'manage_calendar' },
     { id: 'customers', label: 'Customers', icon: 'UsersIcon', requiredPerm: 'manage_customers' },
     { id: 'payments', label: 'Payments', icon: 'CreditCardIcon', requiredPerm: 'manage_payments' },
@@ -2100,6 +2148,7 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
                 {activeTab === 'overview' && 'Business at a glance'}
                 {activeTab === 'enquiries' && `${stats.newEnquiries} new enquiries awaiting action`}
                 {activeTab === 'bookings' && `${activeBookings.length} active bookings in progress`}
+                {activeTab === 'manual_booking' && 'Create step-wise booking with menu & payment'}
                 {activeTab === 'calendar' && `${MONTHS[calendarMonth]} ${calendarYear}`}
                 {activeTab === 'customers' && `${customers.length} registered customers`}
                 {activeTab === 'payments' && 'Track deposits and balances'}
@@ -2113,6 +2162,16 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {activeTab !== 'manual_booking' && (
+              <button
+                onClick={() => setActiveTab('manual_booking')}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow transition-all active:scale-95"
+                style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}
+              >
+                <Icon name="PlusIcon" size={14} />
+                <span>New Booking</span>
+              </button>
+            )}
             {stats.newEnquiries > 0 && (
               <button onClick={() => setActiveTab('enquiries')} className="hidden sm:flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
@@ -2318,22 +2377,33 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
           {/* ─── BOOKINGS ─── */}
           {activeTab === 'bookings' && (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-1.5 flex-wrap">
-                  <Icon name="FunnelIcon" size={14} className="text-gray-400" />
-                  <span className="text-xs text-gray-500 font-medium">Status:</span>
-                  {['all', ...STATUS_FLOW.filter(s => s !== 'new_enquiry' && s !== 'completed')].map((s) => (
-                    <button key={s} onClick={() => setFilterStatus(s)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-medium capitalize transition-colors ${filterStatus === s ? 'text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-                      style={filterStatus === s ? { background: 'linear-gradient(135deg, #C8860A, #F0A830)' } : {}}>
-                      {s === 'all' ? 'All' : STATUS_LABELS[s as BookingStatus]}
-                    </button>
-                  ))}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-1.5 flex-wrap">
+                    <Icon name="FunnelIcon" size={14} className="text-gray-400" />
+                    <span className="text-xs text-gray-500 font-medium">Status:</span>
+                    {['all', ...STATUS_FLOW.filter(s => s !== 'new_enquiry' && s !== 'completed')].map((s) => (
+                      <button key={s} onClick={() => setFilterStatus(s)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium capitalize transition-colors ${filterStatus === s ? 'text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                        style={filterStatus === s ? { background: 'linear-gradient(135deg, #C8860A, #F0A830)' } : {}}>
+                        {s === 'all' ? 'All' : STATUS_LABELS[s as BookingStatus]}
+                      </button>
+                    ))}
+                  </div>
+                  <select value={filterEvent} onChange={(e) => setFilterEvent(e.target.value)} className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-600 focus:outline-none">
+                    <option value="all">All Event Types</option>
+                    {eventTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
                 </div>
-                <select value={filterEvent} onChange={(e) => setFilterEvent(e.target.value)} className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-600 focus:outline-none">
-                  <option value="all">All Event Types</option>
-                  {eventTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+
+                <button
+                  onClick={() => setActiveTab('manual_booking')}
+                  className="flex items-center gap-1.5 text-white font-semibold text-xs px-3.5 py-2.5 rounded-xl shadow-md hover:shadow-lg transition-all active:scale-95"
+                  style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}
+                >
+                  <Icon name="PlusIcon" size={14} />
+                  <span>New Manual Booking</span>
+                </button>
               </div>
 
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -2424,6 +2494,65 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
                 </div>
               </div>
             </div>
+          )}
+
+          {/* ─── MANUAL BOOKING ─── */}
+          {activeTab === 'manual_booking' && (
+            <ManualBookingForm
+              configuredExtraCharges={configuredExtraCharges}
+              blockedDates={blockedDates}
+              bankDetails={bankDetails}
+              pricingDetails={pricingDetails}
+              banquetPackages={editableBanquetPackages}
+              indianMenu={{
+                name: 'Indian Menu',
+                starters: {
+                  vegetarian: editableIndianMenu.vegStarters,
+                  nonVegetarian: editableIndianMenu.nonVegStarters,
+                },
+                mains: {
+                  vegetarian: editableIndianMenu.vegMains,
+                  nonVegetarian: editableIndianMenu.nonVegMains,
+                },
+                sundries: editableIndianMenu.sundries,
+                desserts: editableIndianMenu.desserts,
+                allergyNotice: INDIAN_MENU.allergyNotice,
+              }}
+              sriLankanMenu={{
+                name: 'Sri Lankan Menu',
+                starters: {
+                  vegetarian: editableSLMenu.vegStarters,
+                  nonVegetarian: editableSLMenu.nonVegStarters,
+                },
+                mains: {
+                  vegetarian: editableSLMenu.vegMains,
+                  nonVegetarian: editableSLMenu.nonVegMains,
+                },
+                sundries: editableSLMenu.sundries,
+                desserts: editableSLMenu.desserts,
+                allergyNotice: SRI_LANKAN_MENU.allergyNotice,
+              }}
+              liveCounters={{
+                name: 'Live Counter Package',
+                ...editableLiveCounter,
+              }}
+              venueHallCharges={editableVenueCharges}
+              kidsPricing={editableKidsPricing}
+              onBookingCreated={(newId) => {
+                const found = bookings.find(b => b.id === newId);
+                if (found) setSelectedBooking(found);
+              }}
+              onNavigateTab={(tab, date) => {
+                if (tab === 'calendar' && date) {
+                  const d = new Date(date);
+                  setCalendarMonth(d.getMonth());
+                }
+                setActiveTab(tab as AdminTab);
+              }}
+              onGenerateInvoice={(b) => {
+                downloadInvoicePDF(b as Booking);
+              }}
+            />
           )}
 
           {/* ─── CALENDAR ─── */}
@@ -3225,7 +3354,11 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
 
           {/* ─── SETTINGS ─── */}
           {activeTab === 'settings' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl">
+            <div className="space-y-6 max-w-5xl">
+              {/* Extra Charges, Fees & Taxes */}
+              <ExtraChargesSettings onChargesUpdated={setConfiguredExtraCharges} />
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Left Column */}
               <div className="space-y-6">
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -3358,6 +3491,7 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
                 </div>
               </div>
             </div>
+          </div>
           )}
           {/* ─── DISCOUNT APPROVALS ─── */}
           {activeTab === 'discount_approvals' && (
@@ -4808,6 +4942,31 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
                         ))}
                     </div>
                   )}
+                  {configuredExtraCharges.length > 0 && (
+                    <div className="mb-2">
+                      <div className="text-[10px] text-gray-400 font-semibold uppercase mb-1">Quick Add Preset Charges:</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {configuredExtraCharges.map(charge => {
+                          const calculatedAmt = charge.type === 'percentage'
+                            ? Math.round(((selectedBooking.baseAmount + (selectedBooking.extraCharges || []).reduce((s, ec) => s + ec.amount, 0)) * charge.amount) / 100)
+                            : charge.amount;
+                          return (
+                            <button
+                              key={charge.id}
+                              type="button"
+                              onClick={() => {
+                                setExtraLabel(charge.label);
+                                setExtraAmount(calculatedAmt.toString());
+                              }}
+                              className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-teal-50 border border-teal-200 text-teal-800 hover:bg-teal-100 transition-colors"
+                            >
+                              + {charge.label} (£{calculatedAmt})
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <input type="text" placeholder="e.g. Extra 10 guests" value={extraLabel} onChange={(e) => setExtraLabel(e.target.value)} className="flex-1 border border-teal-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white" />
                     <input type="number" placeholder="£ amount" value={extraAmount} onChange={(e) => setExtraAmount(e.target.value)} className="w-24 border border-teal-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white" />
@@ -4944,79 +5103,171 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
                 </div>
               )}
 
-              {/* Final payment proof */}
+              {/* Step: Final Payment — Bank Details & Method */}
               {selectedBooking.status === 'final_invoice_sent' && (
-                <div className="border border-gray-200 rounded-xl p-4">
-                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Final Payment Proof</div>
-                  {selectedBooking.paymentProofFinal ? (
-                    <div className="flex items-start gap-4">
-                      {(selectedBooking.paymentProofFinal.startsWith('http') || selectedBooking.paymentProofFinal.startsWith('data:image')) && (
-                        <div
-                          className="relative w-24 h-24 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group flex-shrink-0 bg-gray-50"
-                          onClick={() => {
-                            if (selectedBooking.paymentProofFinal?.startsWith('data:image')) {
-                              const w = window.open('');
-                              w?.document.write(`<img src="${selectedBooking.paymentProofFinal}" style="max-width: 100%; height: auto;"/>`);
-                            } else {
-                              window.open(selectedBooking.paymentProofFinal, '_blank');
-                            }
-                          }}
-                          title="Click to view full image"
-                        >
-                          <img
-                            src={selectedBooking.paymentProofFinal}
-                            alt="Final Payment Proof"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <Icon name="MagnifyingGlassPlusIcon" size={20} className="text-white" />
-                          </div>
-                        </div>
+                <div className="space-y-3">
+                  {/* Bank Details Card with WhatsApp Sharing */}
+                  <div className="border border-amber-200 rounded-xl p-4 bg-amber-50/70 space-y-3 shadow-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-amber-900 uppercase tracking-wide flex items-center gap-1.5">
+                        <Icon name="BuildingLibraryIcon" size={15} />
+                        Bank Account Details for Final Balance
+                      </span>
+                      <span className="text-xs font-extrabold text-[#C8860A] bg-white px-2.5 py-0.5 rounded-md border border-amber-200 shadow-2xs">
+                        Due: £{(getTotalAmount(selectedBooking) - selectedBooking.deposit).toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div className="bg-white rounded-xl p-3 border border-amber-100 text-xs text-gray-700 space-y-1.5 font-mono shadow-2xs">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 font-sans">Account Name:</span>
+                        <span className="font-semibold text-gray-900">{bankDetails.accountName}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 font-sans">Sort Code:</span>
+                        <span className="font-semibold text-gray-900">{bankDetails.sortCode}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 font-sans">Account No:</span>
+                        <span className="font-semibold text-gray-900">{bankDetails.accountNumber}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-gray-100 pt-1">
+                        <span className="text-gray-500 font-sans">Reference:</span>
+                        <span className="font-bold text-amber-800">{selectedBooking.id}</span>
+                      </div>
+                    </div>
+
+                    <a
+                      href={buildWhatsAppLink(selectedBooking.phone, buildFinalPaymentBankWhatsAppText(selectedBooking, bankDetails))}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-xs font-bold px-4 py-2.5 rounded-xl w-full justify-center shadow-xs hover:shadow-md transition-all text-white active:scale-95"
+                      style={{ background: '#25D366' }}
+                    >
+                      <Icon name="ChatBubbleLeftRightIcon" size={15} />
+                      Share Bank Details via WhatsApp
+                    </a>
+                  </div>
+
+                  {/* Final Payment Method & Proof Section */}
+                  <div className="border border-gray-200 rounded-xl p-4 space-y-3 bg-white shadow-xs">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Final Payment Method &amp; Confirmation
+                    </div>
+
+                    {/* Styled payment method selection */}
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+                      <div className="text-xs font-semibold text-gray-700 mb-2">Select Payment Method:</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                        {[
+                          { label: 'Bank Transfer', value: 'Paid by Bank Transfer' },
+                          { label: 'Cash Payment', value: 'Paid by Cash' },
+                          { label: 'Card Payment', value: 'Paid by Card' }
+                        ].map((opt) => {
+                          const isSelected = finalPaymentMethod === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setFinalPaymentMethod(opt.value)}
+                              className={`flex items-center justify-between px-3 py-2 rounded-lg border text-left text-xs font-semibold transition-all ${
+                                isSelected
+                                  ? 'border-amber-500 bg-amber-50 text-amber-800 shadow-xs'
+                                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <span>{opt.label}</span>
+                              {isSelected && (
+                                <span className="text-amber-600">
+                                  <Icon name="CheckIcon" size={14} />
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {finalPaymentMethod === 'Paid by Bank Transfer' && (
+                        <p className="text-[11px] text-amber-800 mt-2.5 bg-amber-50/80 p-2.5 rounded-lg border border-amber-200/60 leading-relaxed">
+                          Bank details are displayed above. Click "Share Bank Details via WhatsApp" to send payment instructions. Once customer sends transfer confirmation, upload it below.
+                        </p>
                       )}
-                      <div className="flex flex-col gap-2 flex-1">
-                        <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5">
-                          <Icon name="CheckCircleIcon" size={16} />
-                          Final payment proof received — confirm below
-                        </div>
+                      {finalPaymentMethod === 'Paid by Cash' && (
+                        <p className="text-[11px] text-emerald-800 mt-2.5 bg-emerald-50/80 p-2.5 rounded-lg border border-emerald-200/60 leading-relaxed">
+                          Cash payment selected. Receipt image upload is optional for cash payments. Click confirm below to close the order.
+                        </p>
+                      )}
+                      {finalPaymentMethod === 'Paid by Card' && (
+                        <p className="text-[11px] text-blue-800 mt-2.5 bg-blue-50/80 p-2.5 rounded-lg border border-blue-200/60 leading-relaxed">
+                          Card payment selected. Upload card machine receipt screenshot or transaction confirmation below.
+                        </p>
+                      )}
+                    </div>
 
-                        {/* Styled payment method selection */}
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 my-1">
-                          <div className="text-xs font-semibold text-gray-700 mb-2">Select Payment Method:</div>
-                          <div className="grid grid-cols-1 gap-1.5">
-                            {[
-                              { label: 'Paid by Cash', value: 'Paid by Cash' },
-                              { label: 'Paid by Card', value: 'Paid by Card' },
-                              { label: 'Paid by Bank Transfer', value: 'Paid by Bank Transfer' }
-                            ].map((opt) => {
-                              const isSelected = finalPaymentMethod === opt.value;
-                              return (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  onClick={() => setFinalPaymentMethod(opt.value)}
-                                  className={`flex items-center justify-between px-3 py-2 rounded-lg border text-left text-xs font-semibold transition-all ${
-                                    isSelected
-                                      ? 'border-amber-500 bg-amber-50 text-amber-800 shadow-sm'
-                                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                                  }`}
-                                >
-                                  <span>{opt.label}</span>
-                                  {isSelected && (
-                                    <span className="text-amber-600">
-                                      <Icon name="CheckIcon" size={14} />
-                                    </span>
-                                  )}
-                                </button>
-                              );
-                            })}
+                    {/* Screenshot Upload / Preview */}
+                    {selectedBooking.paymentProofFinal ? (
+                      <div className="flex items-start gap-4 pt-1">
+                        {(selectedBooking.paymentProofFinal.startsWith('http') || selectedBooking.paymentProofFinal.startsWith('data:image')) && (
+                          <div
+                            className="relative w-24 h-24 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group flex-shrink-0 bg-gray-50"
+                            onClick={() => {
+                              if (selectedBooking.paymentProofFinal?.startsWith('data:image')) {
+                                const w = window.open('');
+                                w?.document.write(`<img src="${selectedBooking.paymentProofFinal}" style="max-width: 100%; height: auto;"/>`);
+                              } else {
+                                window.open(selectedBooking.paymentProofFinal, '_blank');
+                              }
+                            }}
+                            title="Click to view full image"
+                          >
+                            <img
+                              src={selectedBooking.paymentProofFinal}
+                              alt="Final Payment Proof"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Icon name="MagnifyingGlassPlusIcon" size={20} className="text-white" />
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex flex-col gap-2 flex-1">
+                          <div className="flex items-center gap-2 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                            <Icon name="CheckCircleIcon" size={15} />
+                            Payment proof received — ready to confirm and close order
+                          </div>
+                          <div className="flex items-center">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              id="final-proof-reupload"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  handleUploadFinalProof(selectedBooking.id, e.target.files[0]);
+                                }
+                              }}
+                            />
+                            <label
+                              htmlFor="final-proof-reupload"
+                              className="cursor-pointer text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1 font-medium"
+                            >
+                              <Icon name="ArrowPathIcon" size={14} />
+                              {isUploadingFinalProof ? 'Uploading...' : 'Upload different image'}
+                            </label>
                           </div>
                         </div>
-
-                        <div className="flex items-center">
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2 pt-1">
+                        <div className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                          {finalPaymentMethod === 'Paid by Cash'
+                            ? 'Optional: Upload cash receipt screenshot or photo'
+                            : 'Upload payment screenshot received from customer via WhatsApp'}
+                        </div>
+                        <div className="flex items-center gap-2">
                           <input
                             type="file"
                             accept="image/*"
-                            id="final-proof-reupload"
+                            id="final-proof-upload"
                             className="hidden"
                             onChange={(e) => {
                               if (e.target.files && e.target.files[0]) {
@@ -5025,40 +5276,16 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
                             }}
                           />
                           <label
-                            htmlFor="final-proof-reupload"
-                            className="cursor-pointer text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1 font-medium"
+                            htmlFor="final-proof-upload"
+                            className="cursor-pointer bg-white border border-gray-300 text-gray-700 text-xs font-medium px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 shadow-xs"
                           >
-                            <Icon name="ArrowPathIcon" size={14} />
-                            {isUploadingFinalProof ? 'Uploading...' : 'Upload different image'}
+                            <Icon name="ArrowUpTrayIcon" size={15} />
+                            {isUploadingFinalProof ? 'Uploading...' : 'Upload Screenshot'}
                           </label>
                         </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      <div className="text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-100">Awaiting final payment screenshot from customer via WhatsApp</div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          id="final-proof-upload"
-                          className="hidden"
-                          onChange={(e) => {
-                            if (e.target.files && e.target.files[0]) {
-                              handleUploadFinalProof(selectedBooking.id, e.target.files[0]);
-                            }
-                          }}
-                        />
-                        <label
-                          htmlFor="final-proof-upload"
-                          className="cursor-pointer bg-white border border-gray-300 text-gray-700 text-sm px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 shadow-sm"
-                        >
-                          <Icon name="ArrowUpTrayIcon" size={16} />
-                          {isUploadingFinalProof ? 'Uploading...' : 'Upload Screenshot'}
-                        </label>
-                      </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -5315,25 +5542,33 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
                     if (!finalPaymentMethod) return;
                     confirmFinalPayment(selectedBooking.id, finalPaymentMethod);
                   }}
-                  disabled={!selectedBooking.paymentProofFinal || !finalPaymentMethod}
-                  title={!selectedBooking.paymentProofFinal ? "Please upload the payment screenshot first" : !finalPaymentMethod ? "Please select a payment method" : ""}
-                  className={`w-full font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 transition-all ${(!selectedBooking.paymentProofFinal || !finalPaymentMethod) ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300' : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md'}`}
+                  disabled={!finalPaymentMethod || (finalPaymentMethod !== 'Paid by Cash' && !selectedBooking.paymentProofFinal)}
+                  title={!finalPaymentMethod ? "Please select a payment method" : (finalPaymentMethod !== 'Paid by Cash' && !selectedBooking.paymentProofFinal) ? "Please upload the payment screenshot first" : ""}
+                  className={`w-full font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-md ${(!finalPaymentMethod || (finalPaymentMethod !== 'Paid by Cash' && !selectedBooking.paymentProofFinal)) ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300' : 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'}`}
                 >
-                  <Icon name={(!selectedBooking.paymentProofFinal || !finalPaymentMethod) ? "LockClosedIcon" : "CheckCircleIcon"} size={16} />
-                  {!selectedBooking.paymentProofFinal 
-                    ? 'Upload Screenshot to Proceed' 
-                    : !finalPaymentMethod 
-                      ? 'Select Payment Method to Proceed' 
-                      : 'Confirm Final Payment'}
+                  <Icon name={(!finalPaymentMethod || (finalPaymentMethod !== 'Paid by Cash' && !selectedBooking.paymentProofFinal)) ? "LockClosedIcon" : "CheckBadgeIcon"} size={16} />
+                  {!finalPaymentMethod 
+                    ? 'Select Payment Method to Proceed' 
+                    : (finalPaymentMethod !== 'Paid by Cash' && !selectedBooking.paymentProofFinal)
+                      ? 'Upload Screenshot to Proceed' 
+                      : 'Confirm Final Payment & Close Order'}
                 </button>
               )}
               {selectedBooking.status === 'final_payment_received' && (
-                <button onClick={() => updateStatus(selectedBooking.id, 'event_scheduled')}
-                  className="w-full text-white font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
-                  style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}>
-                  <Icon name="CalendarIcon" size={16} />
-                  Schedule Event & Add to Calendar
-                </button>
+                <div className="space-y-2">
+                  <button onClick={() => updateStatus(selectedBooking.id, 'completed')}
+                    className="w-full text-white font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 shadow-md hover:bg-emerald-700 transition-colors"
+                    style={{ background: '#059669' }}>
+                    <Icon name="CheckBadgeIcon" size={16} />
+                    Close Order &amp; Mark as Completed
+                  </button>
+                  <button onClick={() => updateStatus(selectedBooking.id, 'event_scheduled')}
+                    className="w-full text-white font-semibold py-2 rounded-xl text-xs flex items-center justify-center gap-2 opacity-80 hover:opacity-100"
+                    style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}>
+                    <Icon name="CalendarIcon" size={15} />
+                    Schedule Event &amp; Add to Calendar
+                  </button>
+                </div>
               )}
               {selectedBooking.status === 'event_scheduled' && (
                 <div className="space-y-2">
@@ -5470,20 +5705,20 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
               })()}
               {selectedBooking.status === 'completed' && (
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-center gap-2 py-2 text-emerald-700 font-semibold text-sm bg-emerald-50 rounded-xl">
+                  <div className="flex items-center justify-center gap-2 py-2.5 text-emerald-700 font-bold text-sm bg-emerald-50 rounded-xl border border-emerald-200 shadow-2xs">
                     <Icon name="CheckBadgeIcon" size={18} />
-                    Booking Completed
+                    Order Closed &amp; Booking Completed
                   </div>
                   <a href={buildWhatsAppLink(selectedBooking.phone, buildCompletedWhatsAppText(selectedBooking))}
                     target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl w-full justify-center"
-                    style={{ background: '#25D366', color: 'white' }}>
+                    className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl w-full justify-center shadow-xs hover:shadow-md transition-all text-white active:scale-95"
+                    style={{ background: '#25D366' }}>
                     <Icon name="ChatBubbleLeftRightIcon" size={16} />
-                    Send Final Summary via WhatsApp
+                    Send Final Receipt &amp; Closing Confirmation via WhatsApp
                   </a>
                   <button
                     onClick={() => downloadInvoicePDF(selectedBooking)}
-                    className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl w-full justify-center border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 transition-colors shadow-sm"
+                    className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl w-full justify-center border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 transition-colors shadow-2xs"
                   >
                     <Icon name="ArrowDownTrayIcon" size={16} />
                     Download Invoice PDF

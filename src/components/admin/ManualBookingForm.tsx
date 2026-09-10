@@ -1,0 +1,2217 @@
+'use client';
+
+import React, { useState, useMemo } from 'react';
+import Icon from '@/components/ui/AppIcon';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, setDoc, doc } from 'firebase/firestore';
+import {
+  INDIAN_MENU as DEFAULT_INDIAN_MENU,
+  SRI_LANKAN_MENU as DEFAULT_SRI_LANKAN_MENU,
+  LIVE_COUNTER_PACKAGE as DEFAULT_LIVE_COUNTER_PACKAGE,
+  BANQUET_PACKAGES as DEFAULT_BANQUET_PACKAGES,
+  VENUE_HALL_CHARGES as DEFAULT_VENUE_HALL_CHARGES,
+  KIDS_PRICING as DEFAULT_KIDS_PRICING,
+} from '@/app/data/menuData';
+import { ConfiguredExtraCharge } from './ExtraChargesSettings';
+
+const EVENT_TYPES = [
+  'Wedding',
+  'Birthday',
+  'Corporate',
+  'Anniversary',
+  'Graduation',
+  'Reception',
+  'Engagement',
+  'Baby Shower',
+  'Other',
+];
+
+const TIME_SESSIONS = [
+  { label: 'Lunch (12:00 PM – 5:00 PM)', value: '12:00 PM' },
+  { label: 'Dinner (6:00 PM – 11:30 PM)', value: '6:00 PM' },
+  { label: 'All Day (10:00 AM – 11:00 PM)', value: '10:00 AM' },
+  { label: 'Custom Time', value: 'custom' },
+];
+
+export type BanquetPackageItem = typeof DEFAULT_BANQUET_PACKAGES[0];
+export type IndianMenuType = typeof DEFAULT_INDIAN_MENU;
+export type SriLankanMenuType = typeof DEFAULT_SRI_LANKAN_MENU;
+export type LiveCounterPackageType = typeof DEFAULT_LIVE_COUNTER_PACKAGE;
+export type VenueHallChargeItem = typeof DEFAULT_VENUE_HALL_CHARGES[0];
+export type KidsPricingItem = typeof DEFAULT_KIDS_PRICING[0];
+
+export interface ManualBookingFormProps {
+  configuredExtraCharges?: ConfiguredExtraCharge[];
+  blockedDates?: string[];
+  bankDetails?: {
+    accountName: string;
+    sortCode: string;
+    accountNumber: string;
+  };
+  pricingDetails?: {
+    depositPercentage: number;
+  };
+  banquetPackages?: BanquetPackageItem[];
+  indianMenu?: IndianMenuType;
+  sriLankanMenu?: SriLankanMenuType;
+  liveCounters?: LiveCounterPackageType;
+  venueHallCharges?: VenueHallChargeItem[];
+  kidsPricing?: KidsPricingItem[];
+  onBookingCreated?: (bookingId: string) => void;
+  onNavigateTab?: (tab: string, date?: string) => void;
+  onGenerateInvoice?: (booking: any) => void;
+}
+
+export default function ManualBookingForm({
+  configuredExtraCharges = [],
+  blockedDates = [],
+  bankDetails = {
+    accountName: 'Honeymoon Events Ltd',
+    sortCode: '20-00-00',
+    accountNumber: '12345678',
+  },
+  pricingDetails = { depositPercentage: 30 },
+  banquetPackages = DEFAULT_BANQUET_PACKAGES,
+  indianMenu = DEFAULT_INDIAN_MENU,
+  sriLankanMenu = DEFAULT_SRI_LANKAN_MENU,
+  liveCounters = DEFAULT_LIVE_COUNTER_PACKAGE,
+  venueHallCharges = DEFAULT_VENUE_HALL_CHARGES,
+  kidsPricing = DEFAULT_KIDS_PRICING,
+  onBookingCreated,
+  onNavigateTab,
+  onGenerateInvoice,
+}: ManualBookingFormProps) {
+  // ── Step State (1: Customer, 2: Menu, 3: Pricing & Payment, 4: Confirmed) ──
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+
+  // ── Step 1: Customer & Event Details ──
+  const [customerDetails, setCustomerDetails] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    eventType: 'Wedding',
+    customEventType: '',
+    date: '',
+    timeSession: '6:00 PM',
+    customTime: '',
+    adults: 100,
+    kids4to10: 0,
+    kidsUnder4: 0,
+    notes: '',
+  });
+  const [phoneError, setPhoneError] = useState('');
+  const [step1Errors, setStep1Errors] = useState<Record<string, string>>({});
+
+  // ── Step 2: Menu & Package Selection ──
+  const [menuTab, setMenuTab] = useState<'packages' | 'indian' | 'srilankan' | 'live' | 'hall'>('packages');
+  const [selectedPackageId, setSelectedPackageId] = useState<string>('silver');
+  const [selectedPackageCustomPrice, setSelectedPackageCustomPrice] = useState<number>(35);
+
+  // Selected dishes
+  const [selectedVegStarters, setSelectedVegStarters] = useState<string[]>([]);
+  const [selectedNonVegStarters, setSelectedNonVegStarters] = useState<string[]>([]);
+  const [selectedVegMains, setSelectedVegMains] = useState<string[]>([]);
+  const [selectedNonVegMains, setSelectedNonVegMains] = useState<string[]>([]);
+  const [selectedSundries, setSelectedSundries] = useState<string[]>(['Assorted Naan Plain/ Butter', 'Rice - Plain, Pulao, Jeera']);
+  const [selectedDesserts, setSelectedDesserts] = useState<string[]>(['Gulab Jamun']);
+
+  // Selected Live Counters & Extras
+  const [selectedLiveCounters, setSelectedLiveCounters] = useState<{ name: string; price: number }[]>([]);
+  const [selectedExtras, setSelectedExtras] = useState<{ name: string; price: number }[]>([]);
+
+  // Selected Hall Hire
+  const [selectedHallOption, setSelectedHallOption] = useState<{ label: string; amount: number } | null>(null);
+
+  // ── Step 3: Extra Charges, Discount & Payment ──
+  // Active extra charges applied to this booking
+  const [bookingExtraCharges, setBookingExtraCharges] = useState<{ label: string; amount: number; isPreset?: boolean }[]>([]);
+  const [customChargeLabel, setCustomChargeLabel] = useState('');
+  const [customChargeAmount, setCustomChargeAmount] = useState('');
+
+  // Discount
+  const [discountType, setDiscountType] = useState<'none' | 'fixed' | 'percentage'>('none');
+  const [discountValue, setDiscountValue] = useState<string>('');
+  const [discountReason, setDiscountReason] = useState<string>('');
+
+  // Payment Options
+  const [paymentChoice, setPaymentChoice] = useState<'advance' | 'full' | 'pending'>('advance');
+  const [customDepositAmount, setCustomDepositAmount] = useState<string>('500');
+  const [paymentMethod, setPaymentMethod] = useState<'Paid by Cash' | 'Paid by Card' | 'Paid by Bank Transfer'>('Paid by Cash');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentDueDate, setPaymentDueDate] = useState('');
+
+  // Order submission state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createdBooking, setCreatedBooking] = useState<any | null>(null);
+
+  // Center popup modal state
+  const [centerModal, setCenterModal] = useState<{
+    title: string;
+    message: string;
+    type: 'error' | 'success' | 'info';
+  } | null>(null);
+
+  // Initialize configured default charges on first mount or step 3
+  const [chargesInitialized, setChargesInitialized] = useState(false);
+
+  // Current package object
+  const currentPackage = useMemo(() => {
+    return banquetPackages.find((p) => p.id === selectedPackageId) || banquetPackages[2] || banquetPackages[0];
+  }, [banquetPackages, selectedPackageId]);
+
+  // UK Phone formatting & validation
+  const validatePhone = (val: string) => {
+    const cleaned = val.replace(/\s/g, '');
+    return /^(07\d{9}|7\d{9}|\+447\d{9})$/.test(cleaned) || cleaned === '';
+  };
+
+  const handlePhoneChange = (val: string) => {
+    setCustomerDetails((prev) => ({ ...prev, phone: val }));
+    if (val && !validatePhone(val)) {
+      setPhoneError('Enter a valid UK phone (e.g. 07700 900101 or +447700900101)');
+    } else {
+      setPhoneError('');
+    }
+  };
+
+  // Total guests
+  const totalGuests = Number(customerDetails.adults || 0) + Number(customerDetails.kids4to10 || 0) + Number(customerDetails.kidsUnder4 || 0);
+
+  // Kids price per head
+  const kidsPrice = useMemo(() => {
+    const found = kidsPricing.find((k) => k.ageRange.includes('3-10') || k.ageRange.includes('4-10') || k.ageRange.includes('4'));
+    return found ? parseInt(found.price.replace(/[^0-9]/g, '')) || 20 : 20;
+  }, [kidsPricing]);
+
+  // Price calculations
+  const packagePricePerPerson = selectedPackageId === 'custom' ? selectedPackageCustomPrice : currentPackage?.pricePerPerson || 35;
+  const foodBaseAmount = (customerDetails.adults * packagePricePerPerson) + (customerDetails.kids4to10 * kidsPrice);
+  const liveCountersTotal = selectedLiveCounters.reduce((acc, item) => acc + item.price, 0);
+  const extrasTotal = selectedExtras.reduce((acc, item) => acc + item.price, 0);
+  const hallTotal = selectedHallOption ? selectedHallOption.amount : 0;
+  const subtotalBeforeExtras = foodBaseAmount + hallTotal + liveCountersTotal + extrasTotal;
+
+  // Calculate Extra Charges Total
+  const extraChargesTotal = bookingExtraCharges.reduce((acc, item) => acc + item.amount, 0);
+
+  // Calculate Discount Amount
+  const discountAmount = useMemo(() => {
+    if (discountType === 'none') return 0;
+    const val = parseFloat(discountValue) || 0;
+    if (discountType === 'percentage') {
+      return Math.round(((subtotalBeforeExtras + extraChargesTotal) * val) / 100);
+    }
+    return val;
+  }, [discountType, discountValue, subtotalBeforeExtras, extraChargesTotal]);
+
+  // Grand Total
+  const grandTotal = Math.max(0, subtotalBeforeExtras + extraChargesTotal - discountAmount);
+
+  // Suggested Deposit
+  const standardDeposit = useMemo(() => {
+    // Default £500 or % of total, whichever is reasonable
+    const pctAmount = Math.round((grandTotal * (pricingDetails.depositPercentage || 30)) / 100);
+    return Math.max(500, pctAmount || 500);
+  }, [grandTotal, pricingDetails.depositPercentage]);
+
+  // Sync default deposit when entering step 3
+  const handleEnterStep3 = () => {
+    if (!chargesInitialized && configuredExtraCharges.length > 0) {
+      const initialCharges: { label: string; amount: number; isPreset?: boolean }[] = [];
+      configuredExtraCharges.forEach((c) => {
+        if (c.isDefault) {
+          const amt = c.type === 'percentage'
+            ? Math.round((subtotalBeforeExtras * c.amount) / 100)
+            : c.amount;
+          initialCharges.push({
+            label: c.label,
+            amount: amt,
+            isPreset: true,
+          });
+        }
+      });
+      setBookingExtraCharges(initialCharges);
+      setChargesInitialized(true);
+    }
+
+    if (!customDepositAmount || customDepositAmount === '500') {
+      setCustomDepositAmount(standardDeposit.toString());
+    }
+
+    // Default due date: 14 days before event date
+    if (customerDetails.date && !paymentDueDate) {
+      try {
+        const evDate = new Date(customerDetails.date);
+        evDate.setDate(evDate.getDate() - 14);
+        const today = new Date();
+        const finalDue = evDate < today ? today : evDate;
+        setPaymentDueDate(finalDue.toISOString().split('T')[0]);
+      } catch (e) {}
+    }
+  };
+
+  // Amount Paid based on Choice
+  const amountPaid = useMemo(() => {
+    if (paymentChoice === 'full') return grandTotal;
+    if (paymentChoice === 'pending') return 0;
+    const parsed = parseFloat(customDepositAmount) || 0;
+    return Math.min(grandTotal, Math.max(0, parsed));
+  }, [paymentChoice, grandTotal, customDepositAmount]);
+
+  const remainingBalance = Math.max(0, grandTotal - amountPaid);
+
+  // ── Validation for Step 1 ──
+  const validateStep1 = () => {
+    const errors: Record<string, string> = {};
+    if (!customerDetails.name.trim()) errors.name = 'Customer full name is required.';
+    if (!customerDetails.phone.trim()) errors.phone = 'Phone number is required.';
+    if (phoneError) errors.phone = phoneError;
+    if (!customerDetails.date) errors.date = 'Event date is required.';
+    if (customerDetails.adults < 1) errors.adults = 'At least 1 adult guest required.';
+
+    setStep1Errors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleNextFromStep1 = () => {
+    if (validateStep1()) {
+      setCurrentStep(2);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleNextFromStep2 = () => {
+    handleEnterStep3();
+    setCurrentStep(3);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Dish toggle helper
+  const toggleItem = (list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, item: string) => {
+    setList((prev) => (prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]));
+  };
+
+  // Extra Charges toggle
+  const toggleConfiguredCharge = (charge: ConfiguredExtraCharge) => {
+    const exists = bookingExtraCharges.some((c) => c.label === charge.label);
+    if (exists) {
+      setBookingExtraCharges((prev) => prev.filter((c) => c.label !== charge.label));
+    } else {
+      const amt = charge.type === 'percentage'
+        ? Math.round((subtotalBeforeExtras * charge.amount) / 100)
+        : charge.amount;
+      setBookingExtraCharges((prev) => [
+        ...prev,
+        { label: charge.label, amount: amt, isPreset: true },
+      ]);
+    }
+  };
+
+  const handleAddCustomCharge = () => {
+    if (!customChargeLabel.trim()) return;
+    const amt = parseFloat(customChargeAmount);
+    if (isNaN(amt) || amt <= 0) return;
+
+    setBookingExtraCharges((prev) => [
+      ...prev,
+      { label: customChargeLabel.trim(), amount: amt, isPreset: false },
+    ]);
+    setCustomChargeLabel('');
+    setCustomChargeAmount('');
+  };
+
+  const handleRemoveExtraCharge = (index: number) => {
+    setBookingExtraCharges((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // ── Place & Confirm Order ──
+  const handlePlaceOrder = async () => {
+    setIsSubmitting(true);
+    try {
+      const bookingRefId = `BK-${Date.now().toString().slice(-6)}`;
+      const fullPhone = customerDetails.phone.startsWith('+')
+        ? customerDetails.phone
+        : `+44${customerDetails.phone.replace(/^0/, '').replace(/\s/g, '')}`;
+
+      const finalTime = customerDetails.timeSession === 'custom'
+        ? customerDetails.customTime || '12:00 PM'
+        : customerDetails.timeSession;
+
+      const finalEventType = customerDetails.eventType === 'Other'
+        ? customerDetails.customEventType || 'Other Event'
+        : customerDetails.eventType;
+
+      const isDepositPaid = paymentChoice === 'advance' || paymentChoice === 'full';
+      const isFinalPaid = paymentChoice === 'full';
+
+      // Status mapping based on payment:
+      // If paid in full -> 'completed' (order is closed!)
+      // If advance deposit paid -> 'deposit_confirmed'
+      // If unpaid -> 'deposit_pending'
+      const finalStatus = isFinalPaid
+        ? 'completed'
+        : isDepositPaid
+        ? 'deposit_confirmed'
+        : 'deposit_pending';
+
+      const bookingRecord: Record<string, any> = {
+        id: bookingRefId,
+        name: customerDetails.name.trim(),
+        phone: fullPhone,
+        email: customerDetails.email.trim() || 'N/A',
+        eventType: finalEventType,
+        date: customerDetails.date,
+        time: finalTime,
+        timeOfDay: finalTime,
+        guests: totalGuests,
+        adults: Number(customerDetails.adults) || 0,
+        kids4to10: Number(customerDetails.kids4to10) || 0,
+        kidsUnder4: Number(customerDetails.kidsUnder4) || 0,
+        package: currentPackage?.name || 'Custom Package',
+        selectedMenu: currentPackage?.name || 'Custom Package',
+        baseAmount: foodBaseAmount,
+        deposit: amountPaid,
+        depositPaid: isDepositPaid,
+        finalPaymentPaid: isFinalPaid,
+        status: finalStatus,
+        dueDate: paymentDueDate || customerDetails.date,
+        ...(isFinalPaid ? { orderClosedAt: new Date().toISOString() } : {}),
+        notes: customerDetails.notes.trim() || (paymentReference ? `Payment Ref: ${paymentReference}` : ''),
+        extraCharges: [
+          ...(selectedHallOption ? [{ label: `Hall Hire: ${selectedHallOption.label}`, amount: selectedHallOption.amount, isPreset: true }] : []),
+          ...selectedLiveCounters.map((l) => ({ label: `Live Counter: ${l.name}`, amount: l.price, isPreset: true })),
+          ...selectedExtras.map((e) => ({ label: `Extra: ${e.name}`, amount: e.price, isPreset: true })),
+          ...bookingExtraCharges,
+        ],
+        selectedDishes: {
+          vegStarters: selectedVegStarters,
+          nonVegStarters: selectedNonVegStarters,
+          vegMains: selectedVegMains,
+          nonVegMains: selectedNonVegMains,
+          sundries: selectedSundries,
+          desserts: selectedDesserts,
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        enquiryDate: new Date().toISOString().split('T')[0],
+      };
+
+      if (isDepositPaid && paymentMethod) {
+        bookingRecord.paymentMethodDeposit = paymentMethod;
+      }
+      if (isFinalPaid && paymentMethod) {
+        bookingRecord.paymentMethodFinal = paymentMethod;
+      }
+      if (discountType !== 'none' && discountAmount > 0) {
+        bookingRecord.discount = {
+          type: discountType,
+          value: parseFloat(discountValue) || 0,
+          reason: discountReason.trim() || 'Special promotion',
+        };
+      }
+
+      // Deep clean to ensure absolutely no undefined values reach Firestore
+      const cleanRecord = JSON.parse(JSON.stringify(bookingRecord));
+
+      // 1. Write to booking_requests (the primary collection consumed across the dashboard)
+      await setDoc(doc(db, 'booking_requests', bookingRefId), cleanRecord);
+
+      // 2. Mirror to bookings collection if permitted
+      try {
+        await setDoc(doc(db, 'bookings', bookingRefId), cleanRecord);
+      } catch (mirrorErr) {
+        console.warn('Mirror to bookings skipped:', mirrorErr);
+      }
+
+      setCreatedBooking(cleanRecord);
+      setCurrentStep(4);
+      if (onBookingCreated) onBookingCreated(bookingRefId);
+    } catch (error: any) {
+      console.error('Error placing manual booking:', error);
+      setCenterModal({
+        title: 'Booking Notice',
+        message: error?.message || 'Failed to place booking. Please check connection and try again.',
+        type: 'error',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResetForm = () => {
+    setCustomerDetails({
+      name: '',
+      phone: '',
+      email: '',
+      eventType: 'Wedding',
+      customEventType: '',
+      date: '',
+      timeSession: '6:00 PM',
+      customTime: '',
+      adults: 100,
+      kids4to10: 0,
+      kidsUnder4: 0,
+      notes: '',
+    });
+    setSelectedPackageId('silver');
+    setSelectedVegStarters([]);
+    setSelectedNonVegStarters([]);
+    setSelectedVegMains([]);
+    setSelectedNonVegMains([]);
+    setSelectedLiveCounters([]);
+    setSelectedExtras([]);
+    setSelectedHallOption(null);
+    setBookingExtraCharges([]);
+    setDiscountType('none');
+    setPaymentChoice('advance');
+    setCreatedBooking(null);
+    setCurrentStep(1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const isDateBlocked = customerDetails.date && blockedDates.includes(customerDetails.date);
+
+  return (
+    <div className="space-y-6 max-w-6xl mx-auto pb-16">
+      {/* ── Header & Stepper ── */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <span
+                className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white shadow"
+                style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}
+              >
+                <Icon name="PlusCircleIcon" size={20} />
+              </span>
+              <h2 className="text-xl font-bold text-gray-900">Manual Booking Creation</h2>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Create and confirm bookings with customer info, website menu packages, extra charges, advance payment, and automatic calendar sync.
+            </p>
+          </div>
+
+          {currentStep !== 4 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                Step {currentStep} of 3
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Progress Bar / Stepper Tabs */}
+        <div className="grid grid-cols-3 gap-2 border-t border-gray-100 pt-5">
+          {[
+            { step: 1, title: '1. Customer Details', desc: 'Contact & Guest Count' },
+            { step: 2, title: '2. Menu & Packages', desc: 'Dishes, Live Counters & Hall' },
+            { step: 3, title: '3. Pricing & Payment', desc: 'Extras, Advance & Confirm' },
+          ].map((s) => {
+            const isCurrent = currentStep === s.step;
+            const isCompleted = currentStep > s.step;
+            return (
+              <button
+                key={s.step}
+                type="button"
+                disabled={currentStep === 4}
+                onClick={() => {
+                  if (s.step === 1) setCurrentStep(1);
+                  if (s.step === 2 && validateStep1()) setCurrentStep(2);
+                  if (s.step === 3 && validateStep1()) {
+                    handleEnterStep3();
+                    setCurrentStep(3);
+                  }
+                }}
+                className={`text-left p-3 rounded-xl border transition-all ${
+                  isCurrent
+                    ? 'border-amber-400 bg-amber-50/60 shadow-sm ring-1 ring-amber-300'
+                    : isCompleted
+                    ? 'border-emerald-200 bg-emerald-50/30 text-gray-700'
+                    : 'border-gray-200 bg-gray-50/60 text-gray-400'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center ${
+                      isCurrent
+                        ? 'bg-[#C8860A] text-white'
+                        : isCompleted
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-gray-200 text-gray-600'
+                    }`}
+                  >
+                    {isCompleted ? '✓' : s.step}
+                  </span>
+                  <span className={`text-xs font-bold ${isCurrent ? 'text-amber-900' : isCompleted ? 'text-gray-900' : 'text-gray-500'}`}>
+                    {s.title}
+                  </span>
+                </div>
+                <div className="text-[11px] text-gray-500 mt-1 pl-7 hidden sm:block truncate">{s.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── STEP 1: Customer & Event Details ── */}
+      {currentStep === 1 && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm space-y-6 animate-fade-in">
+          <div className="border-b border-gray-100 pb-3 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <Icon name="UserIcon" size={18} style={{ color: '#C8860A' }} />
+              Step 1: Customer &amp; Event Details
+            </h3>
+            <span className="text-xs text-gray-400">* Required fields</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {/* Customer Name */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                Full Name *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Sarah Jenkins"
+                value={customerDetails.name}
+                onChange={(e) => setCustomerDetails({ ...customerDetails, name: e.target.value })}
+                className={`w-full border rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                  step1Errors.name ? 'border-red-300 ring-1 ring-red-300' : 'border-gray-200'
+                }`}
+              />
+              {step1Errors.name && <p className="text-xs text-red-500 mt-1">{step1Errors.name}</p>}
+            </div>
+
+            {/* Phone */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                Phone Number *
+              </label>
+              <input
+                type="tel"
+                required
+                placeholder="e.g. 07700 900101 or +447700900101"
+                value={customerDetails.phone}
+                onChange={(e) => handlePhoneChange(e.target.value)}
+                className={`w-full border rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                  phoneError || step1Errors.phone ? 'border-red-300 ring-1 ring-red-300' : 'border-gray-200'
+                }`}
+              />
+              {(phoneError || step1Errors.phone) && (
+                <p className="text-xs text-red-500 mt-1">{phoneError || step1Errors.phone}</p>
+              )}
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                Email Address
+              </label>
+              <input
+                type="email"
+                placeholder="e.g. sarah@example.com"
+                value={customerDetails.email}
+                onChange={(e) => setCustomerDetails({ ...customerDetails, email: e.target.value })}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+              />
+            </div>
+
+            {/* Event Type */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                Event Type *
+              </label>
+              <select
+                value={customerDetails.eventType}
+                onChange={(e) => setCustomerDetails({ ...customerDetails, eventType: e.target.value })}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+              >
+                {EVENT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+              {customerDetails.eventType === 'Other' && (
+                <input
+                  type="text"
+                  placeholder="Specify event type"
+                  value={customerDetails.customEventType}
+                  onChange={(e) => setCustomerDetails({ ...customerDetails, customEventType: e.target.value })}
+                  className="w-full mt-2 border border-gray-200 rounded-xl px-3 py-1.5 text-xs bg-gray-50"
+                />
+              )}
+            </div>
+
+            {/* Event Date */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                Event Date *
+              </label>
+              <input
+                type="date"
+                required
+                value={customerDetails.date}
+                onChange={(e) => setCustomerDetails({ ...customerDetails, date: e.target.value })}
+                className={`w-full border rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                  isDateBlocked ? 'border-red-400 bg-red-50 text-red-700' : 'border-gray-200'
+                }`}
+              />
+              {isDateBlocked && (
+                <p className="text-xs text-red-600 font-semibold mt-1 flex items-center gap-1">
+                  <Icon name="ExclamationTriangleIcon" size={13} />
+                  Warning: This date is marked as blocked in Settings!
+                </p>
+              )}
+              {step1Errors.date && <p className="text-xs text-red-500 mt-1">{step1Errors.date}</p>}
+            </div>
+
+            {/* Time / Session */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                Session / Timing
+              </label>
+              <select
+                value={customerDetails.timeSession}
+                onChange={(e) => setCustomerDetails({ ...customerDetails, timeSession: e.target.value })}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+              >
+                {TIME_SESSIONS.map((ts) => (
+                  <option key={ts.value} value={ts.value}>
+                    {ts.label}
+                  </option>
+                ))}
+              </select>
+              {customerDetails.timeSession === 'custom' && (
+                <input
+                  type="text"
+                  placeholder="e.g. 2:00 PM – 8:00 PM"
+                  value={customerDetails.customTime}
+                  onChange={(e) => setCustomerDetails({ ...customerDetails, customTime: e.target.value })}
+                  className="w-full mt-2 border border-gray-200 rounded-xl px-3 py-1.5 text-xs bg-gray-50"
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Guest Breakdown */}
+          <div className="bg-amber-50/40 border border-amber-200/60 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-bold text-amber-900 uppercase tracking-wide flex items-center gap-1.5">
+                <Icon name="UsersIcon" size={15} />
+                Guest Breakdown &amp; Capacity
+              </span>
+              <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-200/60 text-amber-900">
+                Total Guests: {totalGuests}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Adult Guests (Full Price) *
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  required
+                  value={customerDetails.adults}
+                  onChange={(e) => setCustomerDetails({ ...customerDetails, adults: Math.max(0, parseInt(e.target.value) || 0) })}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white font-semibold text-gray-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Kids 4–10 Yrs (£{kidsPrice}/head)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={customerDetails.kids4to10}
+                  onChange={(e) => setCustomerDetails({ ...customerDetails, kids4to10: Math.max(0, parseInt(e.target.value) || 0) })}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white font-semibold text-gray-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Kids Under 4 Yrs (Free)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={customerDetails.kidsUnder4}
+                  onChange={(e) => setCustomerDetails({ ...customerDetails, kidsUnder4: Math.max(0, parseInt(e.target.value) || 0) })}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white font-semibold text-gray-900"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Special Notes & Dietary Requirements */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+              Special Event Notes, Setup or Dietary Requests
+            </label>
+            <textarea
+              rows={3}
+              placeholder="e.g. Bride prefers white floral backdrop. Halal meat guaranteed. 15 guests require pure vegetarian/Jain meal."
+              value={customerDetails.notes}
+              onChange={(e) => setCustomerDetails({ ...customerDetails, notes: e.target.value })}
+              className="w-full border border-gray-200 rounded-xl p-3 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+            />
+          </div>
+
+          {/* Action to Step 2 */}
+          <div className="flex justify-end pt-3 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={handleNextFromStep1}
+              className="flex items-center gap-2 text-white font-semibold px-6 py-3 rounded-xl text-sm shadow-md hover:shadow-lg transition-all active:scale-95"
+              style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}
+            >
+              <span>Next: Select Menus &amp; Packages</span>
+              <Icon name="ArrowRightIcon" size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 2: Menu & Package Selection ── */}
+      {currentStep === 2 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+          {/* Main selection area (2 cols) */}
+          <div className="lg:col-span-2 space-y-5">
+            {/* Category Navigation Bar */}
+            <div className="flex flex-wrap gap-2 bg-white p-2 rounded-2xl border border-gray-200 shadow-sm">
+              {[
+                { id: 'packages', label: '1. Banquet Packages', icon: 'SparklesIcon' },
+                { id: 'indian', label: '2. Indian Menu', icon: 'FireIcon' },
+                { id: 'srilankan', label: '3. Sri Lankan Menu', icon: 'GlobeAltIcon' },
+                { id: 'live', label: '4. Live Counters & Extras', icon: 'MusicalNoteIcon' },
+                { id: 'hall', label: '5. Venue Hall Hire', icon: 'BuildingOfficeIcon' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setMenuTab(tab.id as any)}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                    menuTab === tab.id
+                      ? 'text-white shadow-md'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                  style={
+                    menuTab === tab.id
+                      ? { background: 'linear-gradient(135deg, #C8860A, #F0A830)' }
+                      : {}
+                  }
+                >
+                  <Icon name={tab.icon} size={15} />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* TAB: BANQUET PACKAGES */}
+            {menuTab === 'packages' && (
+              <div className="space-y-4">
+                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-900">
+                  <p className="font-semibold">Select a Banquet Catering Package for this booking</p>
+                  <p className="text-gray-600 mt-0.5">
+                    Each package sets quotas for Starters, Mains, Desserts, and Drinks. Dishes can be chosen under the Indian or Sri Lankan menu tabs.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {banquetPackages.map((pkg) => {
+                    const isSelected = selectedPackageId === pkg.id;
+                    return (
+                      <div
+                        key={pkg.id}
+                        onClick={() => setSelectedPackageId(pkg.id)}
+                        className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                          isSelected
+                            ? 'border-amber-500 bg-amber-50/40 ring-2 ring-amber-400 shadow-md'
+                            : 'border-gray-200 bg-white hover:border-amber-300 hover:shadow-sm'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <span className="font-bold text-gray-900 text-sm">{pkg.name}</span>
+                            {pkg.tag && (
+                              <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                                {pkg.tag}
+                              </span>
+                            )}
+                            <div className="text-xl font-bold text-[#C8860A] mt-1">
+                              £{pkg.pricePerPerson}
+                              <span className="text-xs text-gray-400 font-normal"> / person</span>
+                            </div>
+                          </div>
+                          <div
+                            className={`w-5 h-5 rounded-full border flex items-center justify-center ${
+                              isSelected ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300'
+                            }`}
+                          >
+                            {isSelected && <Icon name="CheckIcon" size={12} />}
+                          </div>
+                        </div>
+
+                        {/* Quotas */}
+                        <div className="mt-3 pt-2.5 border-t border-gray-100 grid grid-cols-2 gap-1.5 text-[11px] text-gray-600">
+                          <div>
+                            🥗 Starters: {pkg.starters.veg} Veg / {pkg.starters.nonVeg} Non-Veg
+                          </div>
+                          <div>
+                            🍛 Mains: {pkg.mains.veg} Veg / {pkg.mains.nonVeg} Non-Veg
+                          </div>
+                          {pkg.desserts.length > 0 && (
+                            <div className="col-span-2 truncate">
+                              🍮 Desserts: {pkg.desserts.join(', ')}
+                            </div>
+                          )}
+                          {pkg.drinks.length > 0 && (
+                            <div className="col-span-2 truncate text-purple-700">
+                              🥤 Drinks: {pkg.drinks.join(', ')}
+                            </div>
+                          )}
+                        </div>
+
+                        {pkg.guestLabel && (
+                          <div className="mt-2 text-[10px] font-semibold text-gray-400">
+                            👥 {pkg.guestLabel}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Custom package card */}
+                  <div
+                    onClick={() => setSelectedPackageId('custom')}
+                    className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                      selectedPackageId === 'custom'
+                        ? 'border-amber-500 bg-amber-50/40 ring-2 ring-amber-400 shadow-md'
+                        : 'border-gray-200 bg-white hover:border-amber-300'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <span className="font-bold text-gray-900 text-sm">Custom Price Package</span>
+                        <div className="text-xs text-gray-500 mt-0.5">Specify tailored rate per person</div>
+                      </div>
+                      <div
+                        className={`w-5 h-5 rounded-full border flex items-center justify-center ${
+                          selectedPackageId === 'custom' ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300'
+                        }`}
+                      >
+                        {selectedPackageId === 'custom' && <Icon name="CheckIcon" size={12} />}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 pt-2">
+                      <label className="block text-[11px] font-medium text-gray-600 mb-1">Custom Rate (£ / person):</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={selectedPackageCustomPrice}
+                        onChange={(e) => setSelectedPackageCustomPrice(parseFloat(e.target.value) || 0)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-bold text-gray-900 bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: INDIAN MENU DISHES */}
+            {menuTab === 'indian' && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-5">
+                <div className="border-b border-gray-100 pb-3 flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
+                      <Icon name="FireIcon" size={16} className="text-red-600" />
+                      Indian Menu Dish Selection
+                    </h4>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Check off dishes agreed with the customer for this event.
+                    </p>
+                  </div>
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                    {currentPackage?.name}
+                  </span>
+                </div>
+
+                {/* Starters: Veg & Non-Veg */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Veg Starters */}
+                  <div className="border border-emerald-100 bg-emerald-50/20 rounded-xl p-3.5">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">
+                        Vegetarian Starters ({selectedVegStarters.length}/{currentPackage?.starters?.veg || '∞'})
+                      </span>
+                    </div>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {indianMenu.starters.vegetarian.map((dish) => {
+                        const checked = selectedVegStarters.includes(dish);
+                        return (
+                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-emerald-50">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleItem(selectedVegStarters, setSelectedVegStarters, dish)}
+                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className={checked ? 'font-semibold text-emerald-950' : ''}>{dish}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Non-Veg Starters */}
+                  <div className="border border-red-100 bg-red-50/20 rounded-xl p-3.5">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-red-800 uppercase tracking-wide">
+                        Non-Veg Starters ({selectedNonVegStarters.length}/{currentPackage?.starters?.nonVeg || '∞'})
+                      </span>
+                    </div>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {indianMenu.starters.nonVegetarian.map((dish) => {
+                        const checked = selectedNonVegStarters.includes(dish);
+                        return (
+                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-red-50">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleItem(selectedNonVegStarters, setSelectedNonVegStarters, dish)}
+                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className={checked ? 'font-semibold text-red-950' : ''}>{dish}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mains: Veg & Non-Veg */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Veg Mains */}
+                  <div className="border border-emerald-100 bg-emerald-50/20 rounded-xl p-3.5">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">
+                        Vegetarian Mains ({selectedVegMains.length}/{currentPackage?.mains?.veg || '∞'})
+                      </span>
+                    </div>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {indianMenu.mains.vegetarian.map((dish) => {
+                        const checked = selectedVegMains.includes(dish);
+                        return (
+                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-emerald-50">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleItem(selectedVegMains, setSelectedVegMains, dish)}
+                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className={checked ? 'font-semibold text-emerald-950' : ''}>{dish}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Non-Veg Mains */}
+                  <div className="border border-red-100 bg-red-50/20 rounded-xl p-3.5">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-red-800 uppercase tracking-wide">
+                        Non-Veg Mains ({selectedNonVegMains.length}/{currentPackage?.mains?.nonVeg || '∞'})
+                      </span>
+                    </div>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {indianMenu.mains.nonVegetarian.map((dish) => {
+                        const checked = selectedNonVegMains.includes(dish);
+                        return (
+                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-red-50">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleItem(selectedNonVegMains, setSelectedNonVegMains, dish)}
+                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className={checked ? 'font-semibold text-red-950' : ''}>{dish}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sundries & Desserts */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="border border-gray-200 rounded-xl p-3.5">
+                    <span className="text-xs font-bold text-gray-800 uppercase tracking-wide block mb-2">Sundries</span>
+                    <div className="space-y-1.5">
+                      {indianMenu.sundries.map((item) => (
+                        <label key={item} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedSundries.includes(item)}
+                            onChange={() => toggleItem(selectedSundries, setSelectedSundries, item)}
+                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span>{item}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="border border-gray-200 rounded-xl p-3.5">
+                    <span className="text-xs font-bold text-gray-800 uppercase tracking-wide block mb-2">Desserts</span>
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {indianMenu.desserts.map((item) => (
+                        <label key={item} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedDesserts.includes(item)}
+                            onChange={() => toggleItem(selectedDesserts, setSelectedDesserts, item)}
+                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span>{item}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: SRI LANKAN MENU DISHES */}
+            {menuTab === 'srilankan' && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-5">
+                <div className="border-b border-gray-100 pb-3 flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
+                      <Icon name="GlobeAltIcon" size={16} className="text-teal-600" />
+                      Sri Lankan Menu Dish Selection
+                    </h4>
+                    <p className="text-xs text-gray-500 mt-0.5">Authentic Sri Lankan starters and curries.</p>
+                  </div>
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                    {currentPackage?.name}
+                  </span>
+                </div>
+
+                {/* Starters */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="border border-emerald-100 bg-emerald-50/20 rounded-xl p-3.5">
+                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide block mb-2">
+                      Veg Starters ({selectedVegStarters.length})
+                    </span>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {sriLankanMenu.starters.vegetarian.map((dish) => (
+                        <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-emerald-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedVegStarters.includes(dish)}
+                            onChange={() => toggleItem(selectedVegStarters, setSelectedVegStarters, dish)}
+                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span>{dish}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="border border-red-100 bg-red-50/20 rounded-xl p-3.5">
+                    <span className="text-xs font-bold text-red-800 uppercase tracking-wide block mb-2">
+                      Non-Veg Starters ({selectedNonVegStarters.length})
+                    </span>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {sriLankanMenu.starters.nonVegetarian.map((dish) => (
+                        <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-red-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedNonVegStarters.includes(dish)}
+                            onChange={() => toggleItem(selectedNonVegStarters, setSelectedNonVegStarters, dish)}
+                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span>{dish}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mains */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="border border-emerald-100 bg-emerald-50/20 rounded-xl p-3.5">
+                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide block mb-2">
+                      Veg Mains ({selectedVegMains.length})
+                    </span>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {sriLankanMenu.mains.vegetarian.map((dish) => (
+                        <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-emerald-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedVegMains.includes(dish)}
+                            onChange={() => toggleItem(selectedVegMains, setSelectedVegMains, dish)}
+                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span>{dish}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="border border-red-100 bg-red-50/20 rounded-xl p-3.5">
+                    <span className="text-xs font-bold text-red-800 uppercase tracking-wide block mb-2">
+                      Non-Veg Mains ({selectedNonVegMains.length})
+                    </span>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {sriLankanMenu.mains.nonVegetarian.map((dish) => (
+                        <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-red-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedNonVegMains.includes(dish)}
+                            onChange={() => toggleItem(selectedNonVegMains, setSelectedNonVegMains, dish)}
+                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span>{dish}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sundries & Desserts */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="border border-gray-200 rounded-xl p-3.5">
+                    <span className="text-xs font-bold text-gray-800 uppercase tracking-wide block mb-2">Sundries</span>
+                    <div className="space-y-1.5">
+                      {sriLankanMenu.sundries.map((item) => (
+                        <label key={item} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedSundries.includes(item)}
+                            onChange={() => toggleItem(selectedSundries, setSelectedSundries, item)}
+                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span>{item}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="border border-gray-200 rounded-xl p-3.5">
+                    <span className="text-xs font-bold text-gray-800 uppercase tracking-wide block mb-2">Desserts</span>
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {sriLankanMenu.desserts.map((item) => (
+                        <label key={item} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedDesserts.includes(item)}
+                            onChange={() => toggleItem(selectedDesserts, setSelectedDesserts, item)}
+                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span>{item}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: LIVE COUNTERS & EXTRAS */}
+            {menuTab === 'live' && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-6">
+                <div>
+                  <h4 className="font-bold text-gray-900 text-sm mb-1 flex items-center gap-1.5">
+                    <Icon name="MusicalNoteIcon" size={16} className="text-amber-600" />
+                    Live Counters &amp; Event Extras
+                  </h4>
+                  <p className="text-xs text-gray-500">
+                    Select live stations (Kottu, Dosa, Chat) and event equipment (DJ setup, LED screens, 360 camera).
+                  </p>
+                </div>
+
+                {/* Sri Lankan & South Indian Live Counters */}
+                <div className="border border-gray-200 rounded-xl p-4 bg-gray-50/40">
+                  <span className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-3">
+                    Sri Lankan &amp; South Indian Live Counters
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {liveCounters.srilankanSouthIndian.map((item) => {
+                      const isChecked = selectedLiveCounters.some((l) => l.name === item.name);
+                      return (
+                        <label
+                          key={item.name}
+                          className={`flex items-center justify-between p-2.5 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            isChecked ? 'bg-amber-50 border-amber-300 text-amber-900 font-semibold' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setSelectedLiveCounters((prev) =>
+                                  isChecked ? prev.filter((l) => l.name !== item.name) : [...prev, item]
+                                );
+                              }}
+                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span>{item.name}</span>
+                          </div>
+                          <span className="font-bold text-[#C8860A]">£{item.price}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* North Indian Live Counters */}
+                <div className="border border-gray-200 rounded-xl p-4 bg-gray-50/40">
+                  <span className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-3">
+                    North Indian Live Counters
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {liveCounters.northIndian.map((item) => {
+                      const isChecked = selectedLiveCounters.some((l) => l.name === item.name);
+                      return (
+                        <label
+                          key={item.name}
+                          className={`flex items-center justify-between p-2.5 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            isChecked ? 'bg-amber-50 border-amber-300 text-amber-900 font-semibold' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setSelectedLiveCounters((prev) =>
+                                  isChecked ? prev.filter((l) => l.name !== item.name) : [...prev, item]
+                                );
+                              }}
+                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span>{item.name}</span>
+                          </div>
+                          <span className="font-bold text-[#C8860A]">£{item.price}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Event Extras Setup */}
+                <div className="border border-purple-100 rounded-xl p-4 bg-purple-50/20">
+                  <span className="text-xs font-bold text-purple-900 uppercase tracking-wide block mb-3">
+                    Event Extras (Music, Lighting &amp; Decor)
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {liveCounters.extras.map((item) => {
+                      const isChecked = selectedExtras.some((e) => e.name === item.name);
+                      return (
+                        <label
+                          key={item.name}
+                          className={`flex items-center justify-between p-2.5 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            isChecked ? 'bg-purple-50 border-purple-300 text-purple-950 font-semibold' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setSelectedExtras((prev) =>
+                                  isChecked ? prev.filter((e) => e.name !== item.name) : [...prev, item]
+                                );
+                              }}
+                              className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                            />
+                            <div>
+                              <span>{item.name}</span>
+                              {item.note && <div className="text-[10px] text-gray-400 font-normal">{item.note}</div>}
+                            </div>
+                          </div>
+                          <span className="font-bold text-purple-700">£{item.price}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: VENUE HALL HIRE */}
+            {menuTab === 'hall' && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
+                <div className="border-b border-gray-100 pb-3">
+                  <h4 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
+                    <Icon name="BuildingOfficeIcon" size={16} className="text-amber-600" />
+                    Venue Hall Hire Charges
+                  </h4>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Select if the event takes place at Honeymoon Banquet Hall and requires hall hire fee.
+                  </p>
+                </div>
+
+                <div className="space-y-2.5">
+                  <label
+                    className={`flex items-center justify-between p-3.5 rounded-xl border text-xs cursor-pointer transition-colors ${
+                      selectedHallOption === null ? 'bg-amber-50 border-amber-400 text-amber-900 font-bold' : 'bg-white border-gray-200 text-gray-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <input
+                        type="radio"
+                        name="hallOption"
+                        checked={selectedHallOption === null}
+                        onChange={() => setSelectedHallOption(null)}
+                        className="text-amber-600 focus:ring-amber-500"
+                      />
+                      <span>No Hall Hire Fee (Offsite Catering or Included in Package)</span>
+                    </div>
+                    <span className="text-gray-400 font-normal">£0</span>
+                  </label>
+
+                  {venueHallCharges.map((hall) => {
+                    const priceMatch = hall.charge.match(/£(\d+)/);
+                    const amount = priceMatch ? parseInt(priceMatch[1]) : 250;
+                    const isSelected = selectedHallOption?.label === hall.day;
+                    return (
+                      <label
+                        key={`${hall.day}-${hall.note}`}
+                        className={`flex items-center justify-between p-3.5 rounded-xl border text-xs cursor-pointer transition-colors ${
+                          isSelected ? 'bg-amber-50 border-amber-400 text-amber-900 font-bold' : 'bg-white border-gray-200 text-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <input
+                            type="radio"
+                            name="hallOption"
+                            checked={isSelected}
+                            onChange={() => setSelectedHallOption({ label: hall.day, amount })}
+                            className="text-amber-600 focus:ring-amber-500"
+                          />
+                          <div>
+                            <span className="font-semibold">{hall.day}</span>
+                            {hall.note && <span className="ml-2 text-gray-400 font-normal">({hall.note})</span>}
+                          </div>
+                        </div>
+                        <span className="font-bold text-[#C8860A]">£{amount}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right Rail: Running Selection Summary */}
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm sticky top-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">Live Order Summary</span>
+                <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
+                  {customerDetails.eventType}
+                </span>
+              </div>
+
+              {/* Customer summary */}
+              <div className="text-xs space-y-1 text-gray-600 bg-gray-50/70 p-3 rounded-xl border border-gray-100">
+                <div className="font-bold text-gray-900">{customerDetails.name || 'Customer Name'}</div>
+                <div>📅 {customerDetails.date || 'Date not set'} · ⏰ {customerDetails.timeSession}</div>
+                <div>👥 {customerDetails.adults} Adults · {customerDetails.kids4to10} Kids</div>
+              </div>
+
+              {/* Package Details */}
+              <div className="text-xs space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium text-gray-700">Package:</span>
+                  <span className="font-bold text-gray-900">{currentPackage?.name}</span>
+                </div>
+                <div className="flex justify-between items-center text-gray-500">
+                  <span>Rate:</span>
+                  <span>£{packagePricePerPerson} / adult</span>
+                </div>
+                <div className="flex justify-between items-center text-gray-500">
+                  <span>Catering Subtotal:</span>
+                  <span className="font-semibold text-gray-900">£{foodBaseAmount.toLocaleString()}</span>
+                </div>
+
+                {selectedHallOption && (
+                  <div className="flex justify-between items-center text-amber-700 pt-1 border-t border-gray-100">
+                    <span>🏛️ Hall Hire:</span>
+                    <span className="font-semibold">+£{selectedHallOption.amount}</span>
+                  </div>
+                )}
+
+                {selectedLiveCounters.length > 0 && (
+                  <div className="flex justify-between items-center text-blue-700 pt-1 border-t border-gray-100">
+                    <span>🍳 Live Counters ({selectedLiveCounters.length}):</span>
+                    <span className="font-semibold">+£{liveCountersTotal}</span>
+                  </div>
+                )}
+
+                {selectedExtras.length > 0 && (
+                  <div className="flex justify-between items-center text-purple-700 pt-1 border-t border-gray-100">
+                    <span>✨ Event Extras ({selectedExtras.length}):</span>
+                    <span className="font-semibold">+£{extrasTotal}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Selected Dishes Badges */}
+              {(selectedVegStarters.length > 0 || selectedNonVegStarters.length > 0 || selectedVegMains.length > 0 || selectedNonVegMains.length > 0) && (
+                <div className="pt-2 border-t border-gray-100">
+                  <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide block mb-1.5">
+                    Selected Dishes ({selectedVegStarters.length + selectedNonVegStarters.length + selectedVegMains.length + selectedNonVegMains.length})
+                  </span>
+                  <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto">
+                    {selectedVegStarters.map((d) => (
+                      <span key={d} className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded">
+                        {d}
+                      </span>
+                    ))}
+                    {selectedNonVegStarters.map((d) => (
+                      <span key={d} className="text-[10px] bg-red-50 text-red-800 border border-red-200 px-1.5 py-0.5 rounded">
+                        {d}
+                      </span>
+                    ))}
+                    {selectedVegMains.map((d) => (
+                      <span key={d} className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded">
+                        {d}
+                      </span>
+                    ))}
+                    {selectedNonVegMains.map((d) => (
+                      <span key={d} className="text-[10px] bg-red-50 text-red-800 border border-red-200 px-1.5 py-0.5 rounded">
+                        {d}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Running Subtotal */}
+              <div className="pt-3 border-t border-gray-200">
+                <div className="flex justify-between items-baseline mb-1">
+                  <span className="text-xs font-semibold text-gray-500">Current Subtotal:</span>
+                  <span className="text-lg font-bold text-[#C8860A]">£{subtotalBeforeExtras.toLocaleString()}</span>
+                </div>
+                <div className="text-[10px] text-gray-400 text-right">Excl. extra delivery/taxes &amp; discounts</div>
+              </div>
+
+              {/* Step Navigation Buttons */}
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleNextFromStep2}
+                  className="w-full text-white font-semibold py-3 rounded-xl text-xs shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
+                  style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}
+                >
+                  <span>Proceed to Pricing &amp; Payment</span>
+                  <Icon name="ArrowRightIcon" size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(1)}
+                  className="w-full text-gray-600 font-semibold py-2.5 rounded-xl text-xs border border-gray-200 hover:bg-gray-50 transition-colors"
+                >
+                  ← Back to Customer Details
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 3: Pricing, Extra Charges & Payment ── */}
+      {currentStep === 3 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+          {/* Main payment options (2 cols) */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* 1. Extra Charges & Surcharges (Settings integration) */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                <div>
+                  <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                    <Icon name="ReceiptPercentIcon" size={17} style={{ color: '#C8860A' }} />
+                    Extra Charges, Taxes &amp; Surcharges
+                  </h4>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Select configured charges (Delivery, Tax, Cleaning) or add on-the-fly custom amounts.
+                  </p>
+                </div>
+                <span className="text-xs font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                  Settings Configured
+                </span>
+              </div>
+
+              {/* Preset charges toggle checkboxes */}
+              {configuredExtraCharges.length > 0 ? (
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wide block">
+                    Available Configured Charges:
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {configuredExtraCharges.map((charge) => {
+                      const isApplied = bookingExtraCharges.some((c) => c.label === charge.label);
+                      const estimatedAmt = charge.type === 'percentage'
+                        ? Math.round((subtotalBeforeExtras * charge.amount) / 100)
+                        : charge.amount;
+
+                      return (
+                        <label
+                          key={charge.id}
+                          className={`flex items-center justify-between p-3 rounded-xl border text-xs cursor-pointer transition-colors ${
+                            isApplied
+                              ? 'bg-amber-50/70 border-amber-400 text-amber-950 font-medium shadow-xs'
+                              : 'bg-gray-50/60 border-gray-200 text-gray-700 hover:bg-gray-100/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isApplied}
+                              onChange={() => toggleConfiguredCharge(charge)}
+                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <div>
+                              <span className="font-semibold">{charge.label}</span>
+                              {charge.description && (
+                                <div className="text-[10px] text-gray-400 font-normal">{charge.description}</div>
+                              )}
+                            </div>
+                          </div>
+                          <span className="font-bold text-[#C8860A]">
+                            +£{estimatedAmt.toLocaleString()}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-xl">
+                  No preset extra charges configured in Settings yet. You can add one below or configure defaults in Settings.
+                </div>
+              )}
+
+              {/* Currently Applied Charges List */}
+              {bookingExtraCharges.length > 0 && (
+                <div className="pt-2 border-t border-gray-100">
+                  <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wide block mb-2">
+                    Charges Applied to Invoice:
+                  </span>
+                  <div className="space-y-1.5">
+                    {bookingExtraCharges.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs"
+                      >
+                        <span className="font-medium text-gray-800">{item.label}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold text-amber-700">+£{item.amount.toLocaleString()}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveExtraCharge(idx)}
+                            className="text-gray-400 hover:text-red-600 p-0.5 rounded"
+                            title="Remove charge"
+                          >
+                            <Icon name="TrashIcon" size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Add Custom One-Off Charge */}
+              <div className="pt-3 border-t border-gray-100">
+                <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wide block mb-1.5">
+                  + Add Custom Charge / Fee:
+                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. Mileage Surcharge, Extra Waiter Fee"
+                    value={customChargeLabel}
+                    onChange={(e) => setCustomChargeLabel(e.target.value)}
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50 focus:bg-white"
+                  />
+                  <div className="relative w-28">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">£</span>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Amount"
+                      value={customChargeAmount}
+                      onChange={(e) => setCustomChargeAmount(e.target.value)}
+                      className="w-full pl-6 pr-2 py-2 border border-gray-200 rounded-xl text-xs bg-gray-50 focus:bg-white font-bold"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddCustomCharge}
+                    className="px-3.5 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-xs font-semibold"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Discounts (Optional) */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
+                <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                  <Icon name="TagIcon" size={16} className="text-amber-600" />
+                  Discount (Optional)
+                </h4>
+                {discountAmount > 0 && (
+                  <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-200">
+                    -£{discountAmount.toLocaleString()} Applied
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">Discount Type</label>
+                  <select
+                    value={discountType}
+                    onChange={(e) => setDiscountType(e.target.value as any)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50 font-medium"
+                  >
+                    <option value="none">No Discount</option>
+                    <option value="fixed">Fixed Amount (£)</option>
+                    <option value="percentage">Percentage (%)</option>
+                  </select>
+                </div>
+
+                {discountType !== 'none' && (
+                  <>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                        Discount Value ({discountType === 'fixed' ? '£' : '%'})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder={discountType === 'fixed' ? 'e.g. 150' : 'e.g. 10'}
+                        value={discountValue}
+                        onChange={(e) => setDiscountValue(e.target.value)}
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50 font-bold text-gray-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-1">Reason / Note</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Early bird booking"
+                        value={discountReason}
+                        onChange={(e) => setDiscountReason(e.target.value)}
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* 3. Payment Mode: Advance vs Full vs Pending */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-5">
+              <div className="border-b border-gray-100 pb-2.5">
+                <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                  <Icon name="CreditCardIcon" size={17} style={{ color: '#C8860A' }} />
+                  Payment Collection &amp; Order Status
+                </h4>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Choose whether the customer has paid an advance deposit, paid the full amount, or deposit is pending.
+                </p>
+              </div>
+
+              {/* Payment choice selector */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  {
+                    id: 'advance',
+                    title: 'Pay Advance / Deposit',
+                    subtitle: `Suggested: £${standardDeposit.toLocaleString()}`,
+                    badge: 'Confirmed on Calendar',
+                    badgeColor: 'bg-amber-100 text-amber-800',
+                  },
+                  {
+                    id: 'full',
+                    title: 'Pay Full Amount',
+                    subtitle: `Full: £${grandTotal.toLocaleString()}`,
+                    badge: 'Fully Paid & Scheduled',
+                    badgeColor: 'bg-emerald-100 text-emerald-800',
+                  },
+                  {
+                    id: 'pending',
+                    title: 'Deposit Pending',
+                    subtitle: '£0 collected now',
+                    badge: 'Pay Later',
+                    badgeColor: 'bg-gray-100 text-gray-700',
+                  },
+                ].map((opt) => {
+                  const isSelected = paymentChoice === opt.id;
+                  return (
+                    <div
+                      key={opt.id}
+                      onClick={() => setPaymentChoice(opt.id as any)}
+                      className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                        isSelected
+                          ? 'border-amber-500 bg-amber-50/50 ring-2 ring-amber-400 shadow-sm'
+                          : 'border-gray-200 bg-gray-50/40 hover:bg-gray-100/60'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-xs text-gray-900">{opt.title}</span>
+                        <div
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                            isSelected ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300'
+                          }`}
+                        >
+                          {isSelected && <Icon name="CheckIcon" size={10} />}
+                        </div>
+                      </div>
+                      <div className="text-xs font-semibold text-[#C8860A]">{opt.subtitle}</div>
+                      <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mt-2 ${opt.badgeColor}`}>
+                        {opt.badge}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Advance Amount Customization (if choice is advance) */}
+              {paymentChoice === 'advance' && (
+                <div className="bg-amber-50/50 border border-amber-200/80 rounded-xl p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-amber-900">Advance Deposit Amount Collected (£):</label>
+                    <span className="text-xs text-amber-700 font-semibold">Standard policy: £500 deposit</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-1">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">£</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max={grandTotal}
+                        value={customDepositAmount}
+                        onChange={(e) => setCustomDepositAmount(e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 border border-amber-300 rounded-xl text-sm font-bold text-gray-900 bg-white"
+                      />
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      Balance Remaining Due: <strong className="text-amber-800">£{remainingBalance.toLocaleString()}</strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Payment Method Selection (if paying advance or full) */}
+              {paymentChoice !== 'pending' && (
+                <div className="space-y-3 pt-2">
+                  <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                    Payment Method Received:
+                  </label>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {[
+                      { value: 'Paid by Cash', label: 'Cash Payment', icon: 'BanknotesIcon' },
+                      { value: 'Paid by Card', label: 'Card Payment', icon: 'CreditCardIcon' },
+                      { value: 'Paid by Bank Transfer', label: 'Bank Transfer', icon: 'BuildingLibraryIcon' },
+                    ].map((pm) => {
+                      const isSelected = paymentMethod === pm.value;
+                      return (
+                        <button
+                          key={pm.value}
+                          type="button"
+                          onClick={() => setPaymentMethod(pm.value as any)}
+                          className={`flex items-center justify-center gap-2 p-2.5 rounded-xl border text-xs font-semibold transition-all ${
+                            isSelected
+                              ? 'border-amber-500 bg-amber-50 text-amber-900 shadow-xs'
+                              : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          <Icon name={pm.icon} size={15} />
+                          <span>{pm.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {paymentMethod === 'Paid by Bank Transfer' && (
+                    <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3.5 space-y-2.5 animate-scale-up">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                          <Icon name="BuildingLibraryIcon" size={15} />
+                          Bank Account Details for Transfer:
+                        </span>
+                        <span className="text-[11px] font-bold text-[#C8860A] bg-white px-2.5 py-0.5 rounded-md border border-amber-200 shadow-2xs">
+                          Amount: £{amountPaid.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-700 font-mono bg-white p-3 rounded-lg border border-amber-100 space-y-1 shadow-2xs">
+                        <div className="flex justify-between">
+                          <span className="text-gray-500 font-sans">Account Name:</span>
+                          <span className="font-semibold text-gray-900">{bankDetails?.accountName || 'Honeymoon Events Ltd'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500 font-sans">Sort Code:</span>
+                          <span className="font-semibold text-gray-900">{bankDetails?.sortCode || '00-00-00'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500 font-sans">Account No:</span>
+                          <span className="font-semibold text-gray-900">{bankDetails?.accountNumber || '12345678'}</span>
+                        </div>
+                        <div className="flex justify-between border-t border-gray-100 pt-1">
+                          <span className="text-gray-500 font-sans">Reference:</span>
+                          <span className="font-bold text-amber-800">{customerDetails.name ? customerDetails.name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) : 'HONEYMOON'}</span>
+                        </div>
+                      </div>
+                      {customerDetails.phone ? (
+                        <a
+                          href={`https://wa.me/${customerDetails.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                            `Hi ${customerDetails.name.split(' ')[0] || 'there'}, here are our bank transfer details for your ${customerDetails.eventType || 'event'} booking on ${customerDetails.date || 'upcoming date'} with Honeymoon Events 🎉:\n\n*💰 Amount to Transfer: £${amountPaid.toLocaleString()}*\n\n🏦 *Account Name:* ${bankDetails?.accountName || 'Honeymoon Events Ltd'}\n📋 *Sort Code:* ${bankDetails?.sortCode || '00-00-00'}\n🔢 *Account No:* ${bankDetails?.accountNumber || '12345678'}\n📌 *Payment Reference:* ${customerDetails.name ? customerDetails.name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) : 'HONEYMOON'}\n\nOnce transferred, please share your confirmation screenshot here. Thank you!`
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold text-white shadow-xs hover:shadow-md transition-all active:scale-95"
+                          style={{ background: '#25D366' }}
+                        >
+                          <Icon name="ChatBubbleLeftRightIcon" size={15} />
+                          <span>Share Bank Details via WhatsApp</span>
+                        </a>
+                      ) : (
+                        <p className="text-[11px] text-gray-500 italic text-center">
+                          Enter customer phone number in Step 1 to share bank details via WhatsApp with 1 click.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Payment Reference */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                        Payment Reference / Note (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Bank ref #1234 or receipt number"
+                        value={paymentReference}
+                        onChange={(e) => setPaymentReference(e.target.value)}
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                        Final Balance Due Date
+                      </label>
+                      <input
+                        type="date"
+                        value={paymentDueDate}
+                        onChange={(e) => setPaymentDueDate(e.target.value)}
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50 font-medium"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right Rail: Complete Invoice / Order Preview */}
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm sticky top-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">Final Bill Preview</span>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                  Ready to Book
+                </span>
+              </div>
+
+              {/* Order breakdown */}
+              <div className="text-xs space-y-2 text-gray-700">
+                <div className="flex justify-between">
+                  <span>Catering ({customerDetails.adults} Adults):</span>
+                  <span className="font-semibold">£{foodBaseAmount.toLocaleString()}</span>
+                </div>
+
+                {selectedHallOption && (
+                  <div className="flex justify-between text-amber-800">
+                    <span>Hall Hire ({selectedHallOption.label}):</span>
+                    <span className="font-semibold">+£{selectedHallOption.amount.toLocaleString()}</span>
+                  </div>
+                )}
+
+                {liveCountersTotal > 0 && (
+                  <div className="flex justify-between text-blue-800">
+                    <span>Live Counters ({selectedLiveCounters.length}):</span>
+                    <span className="font-semibold">+£{liveCountersTotal.toLocaleString()}</span>
+                  </div>
+                )}
+
+                {extrasTotal > 0 && (
+                  <div className="flex justify-between text-purple-800">
+                    <span>Event Extras ({selectedExtras.length}):</span>
+                    <span className="font-semibold">+£{extrasTotal.toLocaleString()}</span>
+                  </div>
+                )}
+
+                {/* Extra charges line items */}
+                {bookingExtraCharges.map((extra, idx) => (
+                  <div key={idx} className="flex justify-between text-amber-700">
+                    <span>+ {extra.label}:</span>
+                    <span className="font-semibold">£{extra.amount.toLocaleString()}</span>
+                  </div>
+                ))}
+
+                {/* Subtotal */}
+                <div className="pt-2 border-t border-gray-100 flex justify-between font-semibold text-gray-600">
+                  <span>Subtotal:</span>
+                  <span>£{(subtotalBeforeExtras + extraChargesTotal).toLocaleString()}</span>
+                </div>
+
+                {/* Discount */}
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-red-600 font-semibold">
+                    <span>Discount ({discountReason || 'Discount'}):</span>
+                    <span>-£{discountAmount.toLocaleString()}</span>
+                  </div>
+                )}
+
+                {/* Grand Total */}
+                <div className="pt-2.5 border-t-2 border-gray-200 flex justify-between items-baseline">
+                  <span className="text-sm font-bold text-gray-900">Grand Total:</span>
+                  <span className="text-xl font-extrabold text-[#C8860A]">
+                    £{grandTotal.toLocaleString()}
+                  </span>
+                </div>
+
+                {/* Payment Breakdown Box */}
+                <div className="mt-3 p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-1.5 text-[11px]">
+                  <div className="flex justify-between text-emerald-700 font-bold">
+                    <span>Amount Paid Now:</span>
+                    <span>£{amountPaid.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-amber-800 font-bold">
+                    <span>Remaining Balance:</span>
+                    <span>£{remainingBalance.toLocaleString()}</span>
+                  </div>
+                  {paymentDueDate && (
+                    <div className="flex justify-between text-gray-500 pt-1 border-t border-gray-200">
+                      <span>Due Date:</span>
+                      <span>{paymentDueDate}</span>
+                    </div>
+                  )}
+                  {paymentChoice !== 'pending' && (
+                    <div className="flex justify-between text-gray-500">
+                      <span>Payment Method:</span>
+                      <span>{paymentMethod.replace('Paid by ', '')}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Order Placement Action */}
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={handlePlaceOrder}
+                  className="w-full text-white font-bold py-3.5 rounded-xl text-sm shadow-lg hover:shadow-xl transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                  style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}
+                >
+                  <Icon name="CheckCircleIcon" size={18} />
+                  <span>{isSubmitting ? 'Placing Order...' : 'Place & Confirm Booking'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(2)}
+                  className="w-full text-gray-600 font-semibold py-2 rounded-xl text-xs border border-gray-200 hover:bg-gray-50 transition-colors"
+                >
+                  ← Back to Menu Selection
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 4: Order Completed Success State ── */}
+      {currentStep === 4 && createdBooking && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm text-center max-w-3xl mx-auto space-y-6 animate-scale-up">
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center mx-auto text-white shadow-lg"
+            style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)' }}
+          >
+            <Icon name="CheckIcon" size={32} />
+          </div>
+
+          <div>
+            <span className={`text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full border ${
+              createdBooking.status === 'completed' || createdBooking.finalPaymentPaid
+                ? 'text-emerald-800 bg-emerald-100/70 border-emerald-300'
+                : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+            }`}>
+              {createdBooking.status === 'completed' || createdBooking.finalPaymentPaid
+                ? 'Order Closed & Completed in Full ✅'
+                : 'Booking Confirmed & Added to Calendar'}
+            </span>
+            <h3 className="text-2xl font-extrabold text-gray-900 mt-3">
+              {createdBooking.status === 'completed' || createdBooking.finalPaymentPaid
+                ? 'Order Placed & Completed!'
+                : 'Order Placed Successfully!'}
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Booking Reference:{' '}
+              <strong className="text-amber-800 font-mono text-base">{createdBooking.id}</strong>
+            </p>
+          </div>
+
+          {/* Quick Summary Card */}
+          <div className="bg-amber-50/40 border border-amber-200/80 rounded-2xl p-5 text-left grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+            <div>
+              <span className="text-gray-500 block">Customer</span>
+              <strong className="text-gray-900 font-semibold text-sm">{createdBooking.name}</strong>
+              <div className="text-gray-500 text-[11px]">{createdBooking.phone}</div>
+            </div>
+            <div>
+              <span className="text-gray-500 block">Event Date</span>
+              <strong className="text-gray-900 font-semibold text-sm">{createdBooking.date}</strong>
+              <div className="text-gray-500 text-[11px]">{createdBooking.time}</div>
+            </div>
+            <div>
+              <span className="text-gray-500 block">Package &amp; Guests</span>
+              <strong className="text-gray-900 font-semibold text-sm">{createdBooking.package}</strong>
+              <div className="text-gray-500 text-[11px]">{createdBooking.guests} Total Guests</div>
+            </div>
+            <div>
+              <span className="text-gray-500 block">Payment Status</span>
+              <strong className="text-emerald-700 font-semibold text-sm">
+                {createdBooking.finalPaymentPaid ? 'Paid in Full — Order Closed' : createdBooking.depositPaid ? `Deposit Paid (£${createdBooking.deposit})` : 'Pending'}
+              </strong>
+              <div className="text-amber-700 text-[11px]">
+                {createdBooking.finalPaymentPaid ? 'No balance due' : `Balance: £${(grandTotal - amountPaid).toLocaleString()}`}
+              </div>
+            </div>
+          </div>
+
+          {/* Direct Action Buttons */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+            {/* View on Calendar */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onNavigateTab) onNavigateTab('calendar', createdBooking.date);
+              }}
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-all shadow-xs"
+            >
+              <Icon name="CalendarIcon" size={16} className="text-amber-600" />
+              <span>View on Calendar</span>
+            </button>
+
+            {/* View in Bookings */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onNavigateTab) onNavigateTab('bookings');
+              }}
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-all shadow-xs"
+            >
+              <Icon name="CalendarDaysIcon" size={16} className="text-blue-600" />
+              <span>View in Bookings List</span>
+            </button>
+
+            {/* Print / Download Invoice */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onGenerateInvoice) {
+                  onGenerateInvoice(createdBooking);
+                } else if (onNavigateTab) {
+                  onNavigateTab('bookings');
+                }
+              }}
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50/50 text-xs font-bold text-amber-900 hover:bg-amber-100/60 transition-all shadow-xs"
+            >
+              <Icon name="PrinterIcon" size={16} className="text-[#C8860A]" />
+              <span>Print / Download Invoice</span>
+            </button>
+
+            {/* WhatsApp Confirmation */}
+            <a
+              href={`https://wa.me/${createdBooking.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                createdBooking.finalPaymentPaid || createdBooking.status === 'completed'
+                  ? `Hi ${createdBooking.name.split(' ')[0]}, thank you for confirming your booking with Honeymoon Events! 🎉\n\n*Booking Ref:* ${createdBooking.id}\n*Event:* ${createdBooking.eventType} on ${createdBooking.date} (${createdBooking.time})\n*Package:* ${createdBooking.package} for ${createdBooking.guests} guests\n*Grand Total:* £${grandTotal.toLocaleString()}\n*Payment Status:* Paid in Full via ${paymentMethod} ✅\n*Order Status:* Closed & Confirmed\n\nWe look forward to hosting your memorable event! Please contact us if you need any assistance.`
+                  : `Hi ${createdBooking.name.split(' ')[0]}, thank you for confirming your booking with Honeymoon Events! 🎉\n\nBooking Ref: ${createdBooking.id}\nEvent: ${createdBooking.eventType} on ${createdBooking.date} (${createdBooking.time})\nPackage: ${createdBooking.package} for ${createdBooking.guests} guests\nTotal: £${grandTotal.toLocaleString()}\nAmount Paid: £${amountPaid.toLocaleString()} (${paymentMethod})\nRemaining Balance: £${(grandTotal - amountPaid).toLocaleString()}\n\nWe look forward to hosting your memorable event!`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="col-span-1 sm:col-span-2 md:col-span-3 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold text-white shadow-md hover:shadow-lg transition-all"
+              style={{ background: '#25D366' }}
+            >
+              <Icon name="ChatBubbleLeftRightIcon" size={16} />
+              <span>{createdBooking.finalPaymentPaid || createdBooking.status === 'completed' ? 'Send Paid in Full & Closed Order WhatsApp Confirmation' : 'Send WhatsApp Confirmation to Customer'}</span>
+            </a>
+          </div>
+
+          {/* Reset / Create Another Booking */}
+          <div className="pt-4 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={handleResetForm}
+              className="text-xs font-semibold text-gray-500 hover:text-gray-900 underline"
+            >
+              + Create Another Booking
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── CENTERED POPUP MODAL ─── */}
+      {centerModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm border border-gray-100 flex flex-col items-center text-center animate-scale-up">
+            <div
+              className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 ${
+                centerModal.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-600'
+                  : 'bg-rose-50 text-rose-600'
+              }`}
+            >
+              <Icon
+                name={centerModal.type === 'success' ? 'CheckIcon' : 'ExclamationTriangleIcon'}
+                size={28}
+              />
+            </div>
+            <h3 className="text-base font-bold text-gray-900 mb-1.5">{centerModal.title}</h3>
+            <p className="text-xs text-gray-600 mb-5 leading-relaxed">{centerModal.message}</p>
+            <button
+              type="button"
+              onClick={() => setCenterModal(null)}
+              className="w-full py-2.5 rounded-xl text-xs font-bold text-white shadow-md active:scale-95 transition-all"
+              style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
