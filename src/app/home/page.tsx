@@ -1,25 +1,15 @@
 'use client';
 
 import { useEffect } from 'react';
-import Link from 'next/link';
+import HomePage from '../page';
 
-export default function HomeRedirectPage() {
+export default function HomeRoutePage() {
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.location.replace('/');
+    // Silently normalize the address bar URL to '/' without page reload, redirect screens, or loops
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/home')) {
+      window.history.replaceState(null, '', '/');
     }
   }, []);
 
-  return (
-    <main className="min-h-screen flex flex-col items-center justify-center bg-white px-6 text-center">
-      <p className="text-lg font-medium text-slate-700 mb-4">Redirecting to homepage...</p>
-      <p className="text-sm text-slate-500">
-        If you are not redirected automatically,{' '}
-        <Link href="/" className="text-blue-600 underline">
-          click here
-        </Link>
-        .
-      </p>
-    </main>
-  );
+  return <HomePage />;
 }

@@ -1,6 +1,15 @@
 RewriteEngine On
 RewriteBase /
 
+# Prevent browser and intermediate caching of HTML so old redirects/pages are never stuck
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|htm)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires 0
+  </FilesMatch>
+</IfModule>
+
 # Serve pretty URLs for static pages
 RewriteRule ^home/?$ home.html [L]
 RewriteRule ^admin/?$ admin.html [L]
@@ -12,3 +21,4 @@ RewriteRule ^$ index.html [L]
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule .* /404.html [L]
+
