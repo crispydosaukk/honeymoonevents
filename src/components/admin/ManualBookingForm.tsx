@@ -49,7 +49,11 @@ export interface ManualBookingFormProps {
     accountNumber: string;
   };
   pricingDetails?: {
-    depositPercentage: number;
+    depositPercentage?: number;
+    depositAmount?: number;
+    minimumBookingHours?: number;
+    weekdayRate?: number;
+    weekendRate?: number;
   };
   banquetPackages?: BanquetPackageItem[];
   indianMenu?: IndianMenuType;
@@ -70,7 +74,7 @@ export default function ManualBookingForm({
     sortCode: '20-00-00',
     accountNumber: '12345678',
   },
-  pricingDetails = { depositPercentage: 30 },
+  pricingDetails = { depositPercentage: 500 },
   banquetPackages = DEFAULT_BANQUET_PACKAGES,
   indianMenu = DEFAULT_INDIAN_MENU,
   sriLankanMenu = DEFAULT_SRI_LANKAN_MENU,
@@ -209,10 +213,22 @@ export default function ManualBookingForm({
 
   // Suggested Deposit
   const standardDeposit = useMemo(() => {
-    // Default £500 or % of total, whichever is reasonable
-    const pctAmount = Math.round((grandTotal * (pricingDetails.depositPercentage || 30)) / 100);
-    return Math.max(500, pctAmount || 500);
-  }, [grandTotal, pricingDetails.depositPercentage]);
+    if (!grandTotal || grandTotal <= 0) return 0;
+    const rawVal = pricingDetails?.depositAmount ?? pricingDetails?.depositPercentage;
+    let baseDeposit = 500; // Venue standard policy is £500
+    if (typeof rawVal === 'number' && rawVal > 0) {
+      if (rawVal > 100) {
+        // Flat £ amount from Admin Settings (e.g. 500 -> £500)
+        baseDeposit = rawVal;
+      } else {
+        // Percentage (e.g. 30%)
+        const pctAmt = Math.round((grandTotal * rawVal) / 100);
+        baseDeposit = Math.max(500, pctAmt);
+      }
+    }
+    // Standard suggested deposit must NEVER exceed grandTotal!
+    return Math.min(grandTotal, Math.max(1, baseDeposit));
+  }, [grandTotal, pricingDetails]);
 
   // Sync default deposit when entering step 3
   const handleEnterStep3 = () => {
@@ -234,7 +250,8 @@ export default function ManualBookingForm({
       setChargesInitialized(true);
     }
 
-    if (!customDepositAmount || customDepositAmount === '500') {
+    const currentCustom = parseFloat(customDepositAmount) || 0;
+    if (!customDepositAmount || customDepositAmount === '500' || currentCustom <= 0 || currentCustom >= grandTotal) {
       setCustomDepositAmount(standardDeposit.toString());
     }
 
@@ -255,10 +272,16 @@ export default function ManualBookingForm({
     if (paymentChoice === 'full') return grandTotal;
     if (paymentChoice === 'pending') return 0;
     const parsed = parseFloat(customDepositAmount) || 0;
-    return Math.min(grandTotal, Math.max(0, parsed));
+    return Math.max(0, Math.min(grandTotal, parsed));
   }, [paymentChoice, grandTotal, customDepositAmount]);
 
   const remainingBalance = Math.max(0, grandTotal - amountPaid);
+
+  // Validation flags for advance deposit
+  const customDepositNum = parseFloat(customDepositAmount) || 0;
+  const isDepositOverLimit = paymentChoice === 'advance' && grandTotal > 0 && customDepositNum >= grandTotal;
+  const isDepositUnderLimit = paymentChoice === 'advance' && customDepositNum <= 0;
+  const isAdvanceDepositInvalid = isDepositOverLimit || isDepositUnderLimit;
 
   // ── Validation for Step 1 ──
   const validateStep1 = () => {
@@ -326,6 +349,27 @@ export default function ManualBookingForm({
 
   // ── Place & Confirm Order ──
   const handlePlaceOrder = async () => {
+    // Validate advance deposit amount if advance option chosen
+    if (paymentChoice === 'advance') {
+      const parsedDeposit = parseFloat(customDepositAmount) || 0;
+      if (parsedDeposit <= 0) {
+        setCenterModal({
+          title: 'Invalid Advance Amount',
+          message: 'Please enter a valid advance deposit amount greater than £0.',
+          type: 'error',
+        });
+        return;
+      }
+      if (grandTotal > 0 && parsedDeposit >= grandTotal) {
+        setCenterModal({
+          title: 'Advance Exceeds Total',
+          message: `Advance deposit (£${parsedDeposit.toLocaleString()}) cannot equal or exceed the total booking amount (£${grandTotal.toLocaleString()}). If the customer has paid in full, please select the "Pay Full Amount" option.`,
+          type: 'error',
+        });
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const bookingRefId = `BK-${Date.now().toString().slice(-6)}`;
@@ -1769,7 +1813,15 @@ export default function ManualBookingForm({
                   return (
                     <div
                       key={opt.id}
-                      onClick={() => setPaymentChoice(opt.id as any)}
+                      onClick={() => {
+                        setPaymentChoice(opt.id as any);
+                        if (opt.id === 'advance') {
+                          const parsed = parseFloat(customDepositAmount) || 0;
+                          if (!customDepositAmount || parsed <= 0 || parsed >= grandTotal) {
+                            setCustomDepositAmount(standardDeposit.toString());
+                          }
+                        }
+                      }}
                       className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
                         isSelected
                           ? 'border-amber-500 bg-amber-50/50 ring-2 ring-amber-400 shadow-sm'
@@ -1797,27 +1849,95 @@ export default function ManualBookingForm({
 
               {/* Advance Amount Customization (if choice is advance) */}
               {paymentChoice === 'advance' && (
-                <div className="bg-amber-50/50 border border-amber-200/80 rounded-xl p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-amber-900">Advance Deposit Amount Collected (£):</label>
-                    <span className="text-xs text-amber-700 font-semibold">Standard policy: £500 deposit</span>
+                <div className={`border rounded-xl p-4 space-y-3 transition-colors ${
+                  isDepositOverLimit
+                    ? 'bg-red-50/60 border-red-300 ring-1 ring-red-300'
+                    : isDepositUnderLimit
+                    ? 'bg-amber-50/50 border-amber-300 ring-1 ring-amber-300'
+                    : 'bg-amber-50/50 border-amber-200/80'
+                }`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                      <Icon name="BanknotesIcon" size={15} className="text-[#C8860A]" />
+                      Advance Deposit Amount Collected (£):
+                    </label>
+                    <span className="text-xs text-amber-700 font-semibold bg-amber-100/80 px-2.5 py-0.5 rounded-md border border-amber-200/60">
+                      Standard policy: £500 deposit
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3">
+
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                     <div className="relative flex-1">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">£</span>
                       <input
                         type="number"
                         min="1"
-                        max={grandTotal}
+                        max={grandTotal > 1 ? grandTotal - 1 : grandTotal}
                         value={customDepositAmount}
                         onChange={(e) => setCustomDepositAmount(e.target.value)}
-                        className="w-full pl-8 pr-3 py-2 border border-amber-300 rounded-xl text-sm font-bold text-gray-900 bg-white"
+                        placeholder="e.g. 500"
+                        className={`w-full pl-8 pr-3 py-2 border rounded-xl text-sm font-bold text-gray-900 bg-white focus:outline-none focus:ring-2 ${
+                          isDepositOverLimit
+                            ? 'border-red-400 focus:ring-red-200 text-red-900'
+                            : 'border-amber-300 focus:ring-amber-200'
+                        }`}
                       />
                     </div>
-                    <div className="text-xs text-gray-600">
-                      Balance Remaining Due: <strong className="text-amber-800">£{remainingBalance.toLocaleString()}</strong>
+                    <div className="text-xs text-gray-700 bg-white/90 px-3.5 py-2 rounded-xl border border-amber-200/70 shadow-2xs">
+                      Balance Remaining Due:{' '}
+                      <strong className={remainingBalance > 0 ? 'text-amber-800 text-sm font-extrabold' : 'text-emerald-700 text-sm font-extrabold'}>
+                        £{remainingBalance.toLocaleString()}
+                      </strong>
                     </div>
                   </div>
+
+                  {/* Quick Preset Buttons */}
+                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                    <span className="text-[11px] text-gray-500 font-medium">Quick set:</span>
+                    <button
+                      type="button"
+                      onClick={() => setCustomDepositAmount(standardDeposit.toString())}
+                      className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-amber-300 bg-white hover:bg-amber-100 text-amber-800 transition-colors shadow-2xs"
+                    >
+                      £{standardDeposit.toLocaleString()} (Standard Policy)
+                    </button>
+                    {grandTotal > 1000 && Math.round(grandTotal * 0.25) < grandTotal && (
+                      <button
+                        type="button"
+                        onClick={() => setCustomDepositAmount(Math.round(grandTotal * 0.25).toString())}
+                        className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-700 transition-colors shadow-2xs"
+                      >
+                        25% (£{Math.round(grandTotal * 0.25).toLocaleString()})
+                      </button>
+                    )}
+                    {grandTotal > 500 && Math.round(grandTotal * 0.5) < grandTotal && (
+                      <button
+                        type="button"
+                        onClick={() => setCustomDepositAmount(Math.round(grandTotal * 0.5).toString())}
+                        className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-700 transition-colors shadow-2xs"
+                      >
+                        50% (£{Math.round(grandTotal * 0.5).toLocaleString()})
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Warning if advance deposit equals or exceeds grand total */}
+                  {isDepositOverLimit && (
+                    <div className="text-xs text-red-700 bg-red-100/80 border border-red-200 rounded-xl p-3 font-medium flex items-start gap-2">
+                      <Icon name="ExclamationTriangleIcon" size={17} className="text-red-600 flex-shrink-0 mt-0.5" />
+                      <span>
+                        Advance deposit (£{customDepositNum.toLocaleString()}) cannot equal or exceed the total order amount (£{grandTotal.toLocaleString()}). If the customer has paid in full, please select <strong>Pay Full Amount</strong> above.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Warning if advance deposit is 0 or negative */}
+                  {isDepositUnderLimit && (
+                    <div className="text-xs text-amber-800 bg-amber-100/80 border border-amber-200 rounded-xl p-3 font-medium flex items-center gap-2">
+                      <Icon name="ExclamationTriangleIcon" size={17} className="text-amber-600 flex-shrink-0" />
+                      <span>Please enter an advance deposit amount greater than £0.</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2030,13 +2150,21 @@ export default function ManualBookingForm({
               <div className="space-y-2 pt-2">
                 <button
                   type="button"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isAdvanceDepositInvalid}
                   onClick={handlePlaceOrder}
-                  className="w-full text-white font-bold py-3.5 rounded-xl text-sm shadow-lg hover:shadow-xl transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                  className={`w-full text-white font-bold py-3.5 rounded-xl text-sm shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 ${
+                    isAdvanceDepositInvalid ? 'opacity-50 cursor-not-allowed' : 'disabled:opacity-50'
+                  }`}
                   style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}
                 >
                   <Icon name="CheckCircleIcon" size={18} />
-                  <span>{isSubmitting ? 'Placing Order...' : 'Place & Confirm Booking'}</span>
+                  <span>
+                    {isSubmitting
+                      ? 'Placing Order...'
+                      : isDepositOverLimit
+                      ? 'Advance Exceeds Total'
+                      : 'Place & Confirm Booking'}
+                  </span>
                 </button>
 
                 <button

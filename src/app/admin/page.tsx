@@ -262,6 +262,8 @@ export default function AdminPage() {
   const [isEditingTime, setIsEditingTime] = useState(false);
   const [isEditingGuests, setIsEditingGuests] = useState(false);
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
+  const [isEditingDeposit, setIsEditingDeposit] = useState(false);
+  const [editDepositValue, setEditDepositValue] = useState<string>('');
   const [discountTab, setDiscountTab] = useState<'pending' | 'history'>('pending');
   const [trackingBookingId, setTrackingBookingId] = useState<string>('');
   const [trackerSearch, setTrackerSearch] = useState<string>('');
@@ -269,6 +271,7 @@ export default function AdminPage() {
   const [finalPaymentMethod, setFinalPaymentMethod] = useState<string>('');
 
   useEffect(() => {
+    setIsEditingDeposit(false);
     if (selectedBooking) {
       setDepositPaymentMethod(selectedBooking.paymentMethodDeposit || '');
       setFinalPaymentMethod(selectedBooking.paymentMethodFinal || '');
@@ -497,7 +500,8 @@ export default function AdminPage() {
   }, []);
 
   const [pricingDetails, setPricingDetails] = useState({
-    depositPercentage: 30,
+    depositPercentage: 500,
+    depositAmount: 500,
     minimumBookingHours: 4,
     weekdayRate: 350,
     weekendRate: 550
@@ -507,8 +511,10 @@ export default function AdminPage() {
     return onSnapshot(doc(db, 'site_data', 'pricing_details'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
+        const dep = data.depositAmount !== undefined ? data.depositAmount : (data.depositPercentage !== undefined ? data.depositPercentage : 500);
         setPricingDetails({
-          depositPercentage: data.depositPercentage !== undefined ? data.depositPercentage : 30,
+          depositPercentage: dep,
+          depositAmount: dep,
           minimumBookingHours: data.minimumBookingHours || 4,
           weekdayRate: data.weekdayRate || 350,
           weekendRate: data.weekendRate || 550
@@ -3412,7 +3418,10 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       <label className="text-sm text-gray-600">Deposit Amount</label>
                       <div className="flex items-center gap-1">
                         <span className="text-gray-500 text-sm">£</span>
-                        <input type="number" value={pricingDetails.depositPercentage} onChange={e => setPricingDetails(p => ({ ...p, depositPercentage: Number(e.target.value) }))} className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none bg-gray-50" />
+                        <input type="number" value={pricingDetails.depositPercentage} onChange={e => {
+                          const val = Number(e.target.value);
+                          setPricingDetails(p => ({ ...p, depositPercentage: val, depositAmount: val }));
+                        }} className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none bg-gray-50" />
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
@@ -5391,16 +5400,82 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Payment Breakdown</div>
                           
                           {/* Deposit */}
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-500">Deposit</span>
+                          <div className="flex justify-between items-start text-xs">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-gray-500">Deposit</span>
+                              {!isEditingDeposit ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditDepositValue(selectedBooking.deposit !== undefined ? String(selectedBooking.deposit) : '0');
+                                    setIsEditingDeposit(true);
+                                  }}
+                                  className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
+                                  title="Edit Deposit Amount"
+                                >
+                                  <Icon name="PencilIcon" size={10} />
+                                  <span>Edit</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setIsEditingDeposit(false)}
+                                  className="text-[10px] text-gray-400 hover:text-gray-600 font-medium"
+                                >
+                                  Cancel
+                                </button>
+                              )}
+                            </div>
                             <div className="text-right">
-                              <span className={`font-semibold ${isDepositPaid ? 'text-emerald-700' : 'text-amber-600'}`}>
-                                £{selectedBooking.deposit.toLocaleString()} {isDepositPaid ? '✓ Paid' : '(pending)'}
-                              </span>
-                              {isDepositPaid && selectedBooking.paymentMethodDeposit && (
-                                <span className="block text-[10px] text-gray-400 font-normal">
-                                  via {selectedBooking.paymentMethodDeposit.replace('Paid by ', '')}
-                                </span>
+                              {!isEditingDeposit ? (
+                                <>
+                                  <span className={`font-semibold ${isDepositPaid ? 'text-emerald-700' : 'text-amber-600'}`}>
+                                    £{selectedBooking.deposit.toLocaleString()} {isDepositPaid ? '✓ Paid' : '(pending)'}
+                                  </span>
+                                  {isDepositPaid && selectedBooking.paymentMethodDeposit && (
+                                    <span className="block text-[10px] text-gray-400 font-normal">
+                                      via {selectedBooking.paymentMethodDeposit.replace('Paid by ', '')}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  <span className="text-xs text-gray-400">£</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={grandTotal}
+                                    value={editDepositValue}
+                                    onChange={(e) => setEditDepositValue(e.target.value)}
+                                    className="w-20 border border-amber-300 rounded px-1.5 py-0.5 text-xs text-right font-bold text-gray-900 bg-white"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const newDep = Math.max(0, Math.min(grandTotal, parseFloat(editDepositValue) || 0));
+                                      const isStillPaidInFull = newDep >= grandTotal;
+                                      const updateData: any = {
+                                        deposit: newDep,
+                                        finalPaymentPaid: isStillPaidInFull ? selectedBooking.finalPaymentPaid : false,
+                                        updatedAt: new Date().toISOString()
+                                      };
+                                      setSelectedBooking((prev: any) => prev ? ({ ...prev, ...updateData }) : null);
+                                      setBookings((prev: any[]) => prev.map(b => b.id === selectedBooking.id ? ({ ...b, ...updateData }) : b));
+                                      try {
+                                        await setDoc(doc(db, 'booking_requests', selectedBooking.id), updateData, { merge: true });
+                                        await setDoc(doc(db, 'bookings', selectedBooking.id), updateData, { merge: true });
+                                        setCustomAlert({ message: `Deposit updated to £${newDep.toLocaleString()}`, type: 'success' });
+                                      } catch (err) {
+                                        console.error('Error updating deposit:', err);
+                                        setCustomAlert({ message: 'Failed to update deposit', type: 'error' });
+                                      }
+                                      setIsEditingDeposit(false);
+                                    }}
+                                    className="text-[10px] bg-amber-600 hover:bg-amber-700 text-white font-bold px-2 py-0.5 rounded shadow-2xs transition-colors"
+                                  >
+                                    Save
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </div>
