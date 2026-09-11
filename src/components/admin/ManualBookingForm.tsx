@@ -13,6 +13,7 @@ import {
   KIDS_PRICING as DEFAULT_KIDS_PRICING,
 } from '@/app/data/menuData';
 import { ConfiguredExtraCharge } from './ExtraChargesSettings';
+import { generateChefMenuPDF, openChefWhatsApp } from '@/utils/chefMenuPDF';
 
 const EVENT_TYPES = [
   'Wedding',
@@ -63,7 +64,7 @@ export interface ManualBookingFormProps {
   kidsPricing?: KidsPricingItem[];
   onBookingCreated?: (bookingId: string) => void;
   onNavigateTab?: (tab: string, date?: string) => void;
-  onGenerateInvoice?: (booking: any) => void;
+  onGenerateInvoice?: (booking: any, isDepositOnly?: boolean) => void;
 }
 
 export default function ManualBookingForm({
@@ -314,6 +315,62 @@ export default function ManualBookingForm({
     setList((prev) => (prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]));
   };
 
+  // ── Chef & Invoices PDF Helpers ──
+  const buildCurrentDraftBooking = (isDepositOnly = false) => {
+    return {
+      id: 'DRAFT-' + (customerDetails.date ? customerDetails.date.replace(/-/g, '') : 'EST'),
+      name: customerDetails.name.trim() || 'Valued Customer',
+      phone: customerDetails.phone.trim() || 'N/A',
+      email: customerDetails.email.trim() || 'N/A',
+      eventType: customerDetails.eventType === 'Other' ? customerDetails.customEventType : customerDetails.eventType,
+      date: customerDetails.date,
+      time: customerDetails.timeSession === 'custom' ? customerDetails.customTime : customerDetails.timeSession,
+      guests: customerDetails.adults + customerDetails.kids4to10 + customerDetails.kidsUnder4,
+      adults: customerDetails.adults,
+      kids4to10: customerDetails.kids4to10,
+      kidsUnder4: customerDetails.kidsUnder4,
+      package: currentPackage?.name || 'Custom Package',
+      selectedMenu: currentPackage?.name || 'Custom Package',
+      baseAmount: foodBaseAmount,
+      deposit: amountPaid,
+      depositPaid: isDepositOnly || paymentChoice !== 'pending',
+      finalPaymentPaid: !isDepositOnly && paymentChoice === 'full',
+      status: paymentChoice === 'full' ? 'completed' : isDepositOnly ? 'deposit_confirmed' : 'new_enquiry',
+      notes: customerDetails.notes.trim(),
+      extraCharges: [
+        ...(selectedHallOption ? [{ label: `Hall Hire: ${selectedHallOption.label}`, amount: selectedHallOption.amount, isPreset: true }] : []),
+        ...selectedLiveCounters.map((l) => ({ label: `Live Counter: ${l.name}`, amount: l.price, isPreset: true })),
+        ...selectedExtras.map((e) => ({ label: `Extra: ${e.name}`, amount: e.price, isPreset: true })),
+        ...bookingExtraCharges,
+      ],
+      selectedDishes: {
+        vegStarters: selectedVegStarters,
+        nonVegStarters: selectedNonVegStarters,
+        vegMains: selectedVegMains,
+        nonVegMains: selectedNonVegMains,
+        sundries: selectedSundries,
+        desserts: selectedDesserts,
+      },
+      enquiryDate: new Date().toISOString().split('T')[0],
+      paymentMethodDeposit: paymentMethod,
+      paymentMethodFinal: paymentMethod,
+    };
+  };
+
+  const handleGenerateCurrentChefPDF = () => {
+    generateChefMenuPDF(buildCurrentDraftBooking(false));
+  };
+
+  const handleOpenCurrentChefWhatsApp = () => {
+    openChefWhatsApp(buildCurrentDraftBooking(false));
+  };
+
+  const handleGenerateCurrentInvoice = (isDepositOnly = false) => {
+    if (onGenerateInvoice) {
+      onGenerateInvoice(buildCurrentDraftBooking(isDepositOnly), isDepositOnly);
+    }
+  };
+
   // Extra Charges toggle
   const toggleConfiguredCharge = (charge: ConfiguredExtraCharge) => {
     const exists = bookingExtraCharges.some((c) => c.label === charge.label);
@@ -504,6 +561,8 @@ export default function ManualBookingForm({
     setSelectedNonVegMains([]);
     setSelectedLiveCounters([]);
     setSelectedExtras([]);
+    setSelectedSundries(['Assorted Naan Plain/ Butter', 'Rice - Plain, Pulao, Jeera']);
+    setSelectedDesserts(['Gulab Jamun']);
     setSelectedHallOption(null);
     setBookingExtraCharges([]);
     setDiscountType('none');
@@ -1098,7 +1157,11 @@ export default function ManualBookingForm({
                 {/* Sundries & Desserts */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="border border-gray-200 rounded-xl p-3.5">
-                    <span className="text-xs font-bold text-gray-800 uppercase tracking-wide block mb-2">Sundries</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-gray-800 uppercase tracking-wide">
+                        Sundries ({selectedSundries.length})
+                      </span>
+                    </div>
                     <div className="space-y-1.5">
                       {indianMenu.sundries.map((item) => (
                         <label key={item} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-gray-50">
@@ -1108,14 +1171,18 @@ export default function ManualBookingForm({
                             onChange={() => toggleItem(selectedSundries, setSelectedSundries, item)}
                             className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
                           />
-                          <span>{item}</span>
+                          <span className={selectedSundries.includes(item) ? 'font-semibold text-gray-900' : ''}>{item}</span>
                         </label>
                       ))}
                     </div>
                   </div>
 
                   <div className="border border-gray-200 rounded-xl p-3.5">
-                    <span className="text-xs font-bold text-gray-800 uppercase tracking-wide block mb-2">Desserts</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-gray-800 uppercase tracking-wide">
+                        Desserts ({selectedDesserts.length})
+                      </span>
+                    </div>
                     <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                       {indianMenu.desserts.map((item) => (
                         <label key={item} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-gray-50">
@@ -1125,7 +1192,7 @@ export default function ManualBookingForm({
                             onChange={() => toggleItem(selectedDesserts, setSelectedDesserts, item)}
                             className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
                           />
-                          <span>{item}</span>
+                          <span className={selectedDesserts.includes(item) ? 'font-semibold text-gray-900' : ''}>{item}</span>
                         </label>
                       ))}
                     </div>
@@ -1153,40 +1220,50 @@ export default function ManualBookingForm({
                 {/* Starters */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="border border-emerald-100 bg-emerald-50/20 rounded-xl p-3.5">
-                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide block mb-2">
-                      Veg Starters ({selectedVegStarters.length})
-                    </span>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">
+                        Vegetarian Starters ({selectedVegStarters.length}/{currentPackage?.starters?.veg || '∞'})
+                      </span>
+                    </div>
                     <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {sriLankanMenu.starters.vegetarian.map((dish) => (
-                        <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-emerald-50">
-                          <input
-                            type="checkbox"
-                            checked={selectedVegStarters.includes(dish)}
-                            onChange={() => toggleItem(selectedVegStarters, setSelectedVegStarters, dish)}
-                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                          />
-                          <span>{dish}</span>
-                        </label>
-                      ))}
+                      {sriLankanMenu.starters.vegetarian.map((dish) => {
+                        const checked = selectedVegStarters.includes(dish);
+                        return (
+                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-emerald-50">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleItem(selectedVegStarters, setSelectedVegStarters, dish)}
+                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className={checked ? 'font-semibold text-emerald-950' : ''}>{dish}</span>
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
 
                   <div className="border border-red-100 bg-red-50/20 rounded-xl p-3.5">
-                    <span className="text-xs font-bold text-red-800 uppercase tracking-wide block mb-2">
-                      Non-Veg Starters ({selectedNonVegStarters.length})
-                    </span>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-red-800 uppercase tracking-wide">
+                        Non-Veg Starters ({selectedNonVegStarters.length}/{currentPackage?.starters?.nonVeg || '∞'})
+                      </span>
+                    </div>
                     <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {sriLankanMenu.starters.nonVegetarian.map((dish) => (
-                        <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-red-50">
-                          <input
-                            type="checkbox"
-                            checked={selectedNonVegStarters.includes(dish)}
-                            onChange={() => toggleItem(selectedNonVegStarters, setSelectedNonVegStarters, dish)}
-                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                          />
-                          <span>{dish}</span>
-                        </label>
-                      ))}
+                      {sriLankanMenu.starters.nonVegetarian.map((dish) => {
+                        const checked = selectedNonVegStarters.includes(dish);
+                        return (
+                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-red-50">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleItem(selectedNonVegStarters, setSelectedNonVegStarters, dish)}
+                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className={checked ? 'font-semibold text-red-950' : ''}>{dish}</span>
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -1194,40 +1271,50 @@ export default function ManualBookingForm({
                 {/* Mains */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="border border-emerald-100 bg-emerald-50/20 rounded-xl p-3.5">
-                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide block mb-2">
-                      Veg Mains ({selectedVegMains.length})
-                    </span>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">
+                        Vegetarian Mains ({selectedVegMains.length}/{currentPackage?.mains?.veg || '∞'})
+                      </span>
+                    </div>
                     <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {sriLankanMenu.mains.vegetarian.map((dish) => (
-                        <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-emerald-50">
-                          <input
-                            type="checkbox"
-                            checked={selectedVegMains.includes(dish)}
-                            onChange={() => toggleItem(selectedVegMains, setSelectedVegMains, dish)}
-                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                          />
-                          <span>{dish}</span>
-                        </label>
-                      ))}
+                      {sriLankanMenu.mains.vegetarian.map((dish) => {
+                        const checked = selectedVegMains.includes(dish);
+                        return (
+                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-emerald-50">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleItem(selectedVegMains, setSelectedVegMains, dish)}
+                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className={checked ? 'font-semibold text-emerald-950' : ''}>{dish}</span>
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
 
                   <div className="border border-red-100 bg-red-50/20 rounded-xl p-3.5">
-                    <span className="text-xs font-bold text-red-800 uppercase tracking-wide block mb-2">
-                      Non-Veg Mains ({selectedNonVegMains.length})
-                    </span>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-red-800 uppercase tracking-wide">
+                        Non-Veg Mains ({selectedNonVegMains.length}/{currentPackage?.mains?.nonVeg || '∞'})
+                      </span>
+                    </div>
                     <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {sriLankanMenu.mains.nonVegetarian.map((dish) => (
-                        <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-red-50">
-                          <input
-                            type="checkbox"
-                            checked={selectedNonVegMains.includes(dish)}
-                            onChange={() => toggleItem(selectedNonVegMains, setSelectedNonVegMains, dish)}
-                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                          />
-                          <span>{dish}</span>
-                        </label>
-                      ))}
+                      {sriLankanMenu.mains.nonVegetarian.map((dish) => {
+                        const checked = selectedNonVegMains.includes(dish);
+                        return (
+                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-red-50">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleItem(selectedNonVegMains, setSelectedNonVegMains, dish)}
+                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className={checked ? 'font-semibold text-red-950' : ''}>{dish}</span>
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -1235,7 +1322,11 @@ export default function ManualBookingForm({
                 {/* Sundries & Desserts */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="border border-gray-200 rounded-xl p-3.5">
-                    <span className="text-xs font-bold text-gray-800 uppercase tracking-wide block mb-2">Sundries</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-gray-800 uppercase tracking-wide">
+                        Sundries ({selectedSundries.length})
+                      </span>
+                    </div>
                     <div className="space-y-1.5">
                       {sriLankanMenu.sundries.map((item) => (
                         <label key={item} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-gray-50">
@@ -1245,14 +1336,18 @@ export default function ManualBookingForm({
                             onChange={() => toggleItem(selectedSundries, setSelectedSundries, item)}
                             className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
                           />
-                          <span>{item}</span>
+                          <span className={selectedSundries.includes(item) ? 'font-semibold text-gray-900' : ''}>{item}</span>
                         </label>
                       ))}
                     </div>
                   </div>
 
                   <div className="border border-gray-200 rounded-xl p-3.5">
-                    <span className="text-xs font-bold text-gray-800 uppercase tracking-wide block mb-2">Desserts</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-gray-800 uppercase tracking-wide">
+                        Desserts ({selectedDesserts.length})
+                      </span>
+                    </div>
                     <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                       {sriLankanMenu.desserts.map((item) => (
                         <label key={item} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-gray-50">
@@ -1262,7 +1357,7 @@ export default function ManualBookingForm({
                             onChange={() => toggleItem(selectedDesserts, setSelectedDesserts, item)}
                             className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
                           />
-                          <span>{item}</span>
+                          <span className={selectedDesserts.includes(item) ? 'font-semibold text-gray-900' : ''}>{item}</span>
                         </label>
                       ))}
                     </div>
@@ -1514,32 +1609,120 @@ export default function ManualBookingForm({
               </div>
 
               {/* Selected Dishes Badges */}
-              {(selectedVegStarters.length > 0 || selectedNonVegStarters.length > 0 || selectedVegMains.length > 0 || selectedNonVegMains.length > 0) && (
-                <div className="pt-2 border-t border-gray-100">
-                  <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide block mb-1.5">
-                    Selected Dishes ({selectedVegStarters.length + selectedNonVegStarters.length + selectedVegMains.length + selectedNonVegMains.length})
-                  </span>
-                  <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto">
+              {(selectedVegStarters.length > 0 ||
+                selectedNonVegStarters.length > 0 ||
+                selectedVegMains.length > 0 ||
+                selectedNonVegMains.length > 0 ||
+                selectedSundries.length > 0 ||
+                selectedDesserts.length > 0 ||
+                selectedLiveCounters.length > 0) && (
+                <div className="pt-2.5 border-t border-gray-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wide">
+                      Selected Dishes ({selectedVegStarters.length + selectedNonVegStarters.length + selectedVegMains.length + selectedNonVegMains.length + selectedSundries.length + selectedDesserts.length})
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-medium">Click × to remove</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto pr-0.5">
                     {selectedVegStarters.map((d) => (
-                      <span key={d} className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded">
-                        {d}
+                      <span key={d} className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-medium">
+                        <span>🥗 {d}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleItem(selectedVegStarters, setSelectedVegStarters, d)}
+                          className="text-emerald-500 hover:text-emerald-900 font-bold ml-0.5"
+                          title="Remove item"
+                        >×</button>
                       </span>
                     ))}
                     {selectedNonVegStarters.map((d) => (
-                      <span key={d} className="text-[10px] bg-red-50 text-red-800 border border-red-200 px-1.5 py-0.5 rounded">
-                        {d}
+                      <span key={d} className="inline-flex items-center gap-1 text-[10px] bg-red-50 text-red-800 border border-red-200 px-1.5 py-0.5 rounded font-medium">
+                        <span>🍗 {d}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleItem(selectedNonVegStarters, setSelectedNonVegStarters, d)}
+                          className="text-red-500 hover:text-red-900 font-bold ml-0.5"
+                          title="Remove item"
+                        >×</button>
                       </span>
                     ))}
                     {selectedVegMains.map((d) => (
-                      <span key={d} className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded">
-                        {d}
+                      <span key={d} className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-medium">
+                        <span>🍛 {d}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleItem(selectedVegMains, setSelectedVegMains, d)}
+                          className="text-emerald-500 hover:text-emerald-900 font-bold ml-0.5"
+                          title="Remove item"
+                        >×</button>
                       </span>
                     ))}
                     {selectedNonVegMains.map((d) => (
-                      <span key={d} className="text-[10px] bg-red-50 text-red-800 border border-red-200 px-1.5 py-0.5 rounded">
-                        {d}
+                      <span key={d} className="inline-flex items-center gap-1 text-[10px] bg-red-50 text-red-800 border border-red-200 px-1.5 py-0.5 rounded font-medium">
+                        <span>🍖 {d}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleItem(selectedNonVegMains, setSelectedNonVegMains, d)}
+                          className="text-red-500 hover:text-red-900 font-bold ml-0.5"
+                          title="Remove item"
+                        >×</button>
                       </span>
                     ))}
+                    {selectedSundries.map((d) => (
+                      <span key={d} className="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-900 border border-amber-200 px-1.5 py-0.5 rounded font-medium">
+                        <span>🍚 {d}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleItem(selectedSundries, setSelectedSundries, d)}
+                          className="text-amber-600 hover:text-amber-950 font-bold ml-0.5"
+                          title="Remove item"
+                        >×</button>
+                      </span>
+                    ))}
+                    {selectedDesserts.map((d) => (
+                      <span key={d} className="inline-flex items-center gap-1 text-[10px] bg-fuchsia-50 text-fuchsia-900 border border-fuchsia-200 px-1.5 py-0.5 rounded font-medium">
+                        <span>🍮 {d}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleItem(selectedDesserts, setSelectedDesserts, d)}
+                          className="text-fuchsia-600 hover:text-fuchsia-950 font-bold ml-0.5"
+                          title="Remove item"
+                        >×</button>
+                      </span>
+                    ))}
+                    {selectedLiveCounters.map((lc) => (
+                      <span key={lc.name} className="inline-flex items-center gap-1 text-[10px] bg-blue-50 text-blue-900 border border-blue-200 px-1.5 py-0.5 rounded font-medium">
+                        <span>🎪 {lc.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLiveCounters((prev) => prev.filter((l) => l.name !== lc.name))}
+                          className="text-blue-500 hover:text-blue-900 font-bold ml-0.5"
+                          title="Remove item"
+                        >×</button>
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Immediate Chef Menu Actions right under Selected Dishes! */}
+                  <div className="pt-2 border-t border-gray-100 flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleGenerateCurrentChefPDF}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-[11px] font-bold text-gray-800 bg-amber-50 hover:bg-amber-100/80 border border-amber-200 transition-colors shadow-2xs"
+                      title="Generate professional Chef Menu PDF sheet with alignment and checklist"
+                    >
+                      <Icon name="PrinterIcon" size={13} className="text-[#C8860A]" />
+                      <span>Print / PDF for Chef</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenCurrentChefWhatsApp}
+                      className="flex items-center justify-center gap-1 py-2 px-2.5 rounded-lg text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors shadow-2xs"
+                      title="Send complete menu checklist to Chef via WhatsApp"
+                    >
+                      <Icon name="ChatBubbleLeftRightIcon" size={13} />
+                      <span>WhatsApp Chef</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -2144,6 +2327,45 @@ export default function ManualBookingForm({
                     </div>
                   )}
                 </div>
+
+                {/* 3 PDFs Toolbar in Step 3 Preview */}
+                <div className="mt-3 pt-2.5 border-t border-gray-100 space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-gray-600 uppercase tracking-wide">
+                    <span>Event Documents &amp; Invoices</span>
+                    <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                      3 PDFs Available
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={handleGenerateCurrentChefPDF}
+                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl border border-amber-200 bg-amber-50/70 hover:bg-amber-100 font-bold text-amber-900 transition-all shadow-2xs text-center"
+                      title="Generate Menu / Chef Production Sheet PDF"
+                    >
+                      <Icon name="ClipboardDocumentListIcon" size={16} className="text-[#C8860A]" />
+                      <span className="text-[10px] leading-tight">1. Menu PDF</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateCurrentInvoice(true)}
+                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 font-bold text-emerald-900 transition-all shadow-2xs text-center"
+                      title="Generate Deposit Invoice PDF"
+                    >
+                      <Icon name="DocumentTextIcon" size={16} className="text-emerald-600" />
+                      <span className="text-[10px] leading-tight">2. Deposit PDF</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateCurrentInvoice(false)}
+                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100 font-bold text-blue-900 transition-all shadow-2xs text-center"
+                      title="Generate Final Invoice PDF"
+                    >
+                      <Icon name="DocumentCheckIcon" size={16} className="text-blue-600" />
+                      <span className="text-[10px] leading-tight">3. Final PDF</span>
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* Order Placement Action */}
@@ -2239,15 +2461,64 @@ export default function ManualBookingForm({
             </div>
           </div>
 
-          {/* Direct Action Buttons */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+          {/* 3 Documents & Invoices Row */}
+          <div className="pt-2 border-t border-gray-100 space-y-2">
+            <div className="text-xs font-bold text-gray-700 uppercase tracking-wide text-left">
+              Official Booking Documents (3 PDFs)
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {/* 1. Menu PDF for Chef */}
+              <button
+                type="button"
+                onClick={() => generateChefMenuPDF(createdBooking)}
+                className="flex items-center justify-center gap-2 px-3 py-3 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100/80 text-xs font-bold text-amber-950 transition-all shadow-xs"
+                title="Download complete Menu & Chef Production Order Sheet PDF"
+              >
+                <Icon name="ClipboardDocumentListIcon" size={16} className="text-[#C8860A]" />
+                <span>1. Menu PDF (Chef Sheet)</span>
+              </button>
+
+              {/* 2. Deposit Invoice PDF */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (onGenerateInvoice) {
+                    onGenerateInvoice(createdBooking, true);
+                  }
+                }}
+                className="flex items-center justify-center gap-2 px-3 py-3 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100/80 text-xs font-bold text-emerald-950 transition-all shadow-xs"
+                title="Download official Deposit Invoice PDF"
+              >
+                <Icon name="DocumentTextIcon" size={16} className="text-emerald-700" />
+                <span>2. Deposit Invoice PDF</span>
+              </button>
+
+              {/* 3. Final Invoice PDF */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (onGenerateInvoice) {
+                    onGenerateInvoice(createdBooking, false);
+                  }
+                }}
+                className="flex items-center justify-center gap-2 px-3 py-3 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100/80 text-xs font-bold text-blue-950 transition-all shadow-xs"
+                title="Download complete Final Invoice & Receipt PDF"
+              >
+                <Icon name="DocumentCheckIcon" size={16} className="text-blue-700" />
+                <span>3. Final Invoice PDF</span>
+              </button>
+            </div>
+          </div>
+
+          {/* WhatsApp & Navigation Actions */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             {/* View on Calendar */}
             <button
               type="button"
               onClick={() => {
                 if (onNavigateTab) onNavigateTab('calendar', createdBooking.date);
               }}
-              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-all shadow-xs"
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-all shadow-xs"
             >
               <Icon name="CalendarIcon" size={16} className="text-amber-600" />
               <span>View on Calendar</span>
@@ -2259,29 +2530,24 @@ export default function ManualBookingForm({
               onClick={() => {
                 if (onNavigateTab) onNavigateTab('bookings');
               }}
-              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-all shadow-xs"
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-all shadow-xs"
             >
               <Icon name="CalendarDaysIcon" size={16} className="text-blue-600" />
               <span>View in Bookings List</span>
             </button>
 
-            {/* Print / Download Invoice */}
+            {/* WhatsApp to Chef */}
             <button
               type="button"
-              onClick={() => {
-                if (onGenerateInvoice) {
-                  onGenerateInvoice(createdBooking);
-                } else if (onNavigateTab) {
-                  onNavigateTab('bookings');
-                }
-              }}
-              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50/50 text-xs font-bold text-amber-900 hover:bg-amber-100/60 transition-all shadow-xs"
+              onClick={() => openChefWhatsApp(createdBooking)}
+              className="flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold text-white shadow-md hover:shadow-lg transition-all"
+              style={{ background: 'linear-gradient(135deg, #059669, #10B981)' }}
             >
-              <Icon name="PrinterIcon" size={16} className="text-[#C8860A]" />
-              <span>Print / Download Invoice</span>
+              <Icon name="ChatBubbleLeftRightIcon" size={16} />
+              <span>Send Menu to Chef via WhatsApp</span>
             </button>
 
-            {/* WhatsApp Confirmation */}
+            {/* WhatsApp Confirmation to Customer */}
             <a
               href={`https://wa.me/${createdBooking.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
                 createdBooking.finalPaymentPaid || createdBooking.status === 'completed'
@@ -2290,11 +2556,11 @@ export default function ManualBookingForm({
               )}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="col-span-1 sm:col-span-2 md:col-span-3 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold text-white shadow-md hover:shadow-lg transition-all"
+              className="flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold text-white shadow-md hover:shadow-lg transition-all"
               style={{ background: '#25D366' }}
             >
               <Icon name="ChatBubbleLeftRightIcon" size={16} />
-              <span>{createdBooking.finalPaymentPaid || createdBooking.status === 'completed' ? 'Send Paid in Full & Closed Order WhatsApp Confirmation' : 'Send WhatsApp Confirmation to Customer'}</span>
+              <span>{createdBooking.finalPaymentPaid || createdBooking.status === 'completed' ? 'WhatsApp Receipt to Customer (Full Paid)' : 'WhatsApp Deposit Confirmation to Customer'}</span>
             </a>
           </div>
 

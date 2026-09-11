@@ -10,6 +10,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import AccessControl from '@/components/admin/AccessControl';
 import ManualBookingForm from '@/components/admin/ManualBookingForm';
 import ExtraChargesSettings, { ConfiguredExtraCharge, DEFAULT_CONFIGURED_CHARGES } from '@/components/admin/ExtraChargesSettings';
+import { generateChefMenuPDF, openChefWhatsApp } from '@/utils/chefMenuPDF';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
@@ -65,6 +66,15 @@ interface Booking {
   paymentMethodFinal?: string;
   discount?: Discount;
   discountRequest?: DiscountRequest;
+  selectedDishes?: {
+    vegStarters?: string[];
+    nonVegStarters?: string[];
+    vegMains?: string[];
+    nonVegMains?: string[];
+    sundries?: string[];
+    desserts?: string[];
+    [key: string]: any;
+  };
   enquiryDate: string;
   updatedAt?: string;
   createdAt?: string;
@@ -327,6 +337,7 @@ export default function AdminPage() {
           paymentMethodFinal: data.paymentMethodFinal,
           discount: data.discount,
           discountRequest: data.discountRequest,
+          selectedDishes: data.selectedDishes,
           enquiryDate: data.createdAt ? new Date(data.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
           dueDate: (() => {
             if (data.dueDate) return data.dueDate;
@@ -2414,13 +2425,15 @@ Once you have completed the transfer, please send us a screenshot of the payment
 
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[750px]">
+                  <table className="w-full text-sm min-w-[1050px]">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Customer</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Event</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Date</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Amount</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Amount</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Deposit Paid</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Balance Due</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Discount</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Status</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">WhatsApp</th>
@@ -2428,67 +2441,152 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {filtered.filter(b => b.status !== 'new_enquiry' && b.status !== 'completed').map((booking) => (
-                        <tr key={booking.id} className="hover:bg-gray-50/80 transition-colors">
-                          <td className="px-4 py-3.5">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(200,134,10,0.1)' }}>
-                                <span className="text-xs font-bold" style={{ color: '#C8860A' }}>{booking.name.charAt(0)}</span>
+                      {filtered.filter(b => b.status !== 'new_enquiry' && b.status !== 'completed').map((booking) => {
+                        const total = getTotalAmount(booking);
+                        const extraChargesTotal = (booking.extraCharges || []).reduce((s, c) => s + c.amount, 0);
+                        const isDepositPaid = booking.depositPaid || !['new_enquiry', 'menu_sent', 'menu_selected', 'deposit_pending'].includes(booking.status);
+                        const isFinalPaid = booking.finalPaymentPaid || booking.status === 'completed';
+                        const isExtraPaid = booking.status === 'completed' || !!booking.paymentProofExtra || booking.finalPaymentPaid;
+
+                        const depositAmt = booking.deposit || (pricingDetails.depositPercentage || 500);
+                        const finalPaymentAmt = Math.max(0, total - depositAmt - extraChargesTotal);
+                        const totalPaid = (isDepositPaid ? depositAmt : 0) +
+                                          (isFinalPaid ? finalPaymentAmt : 0) +
+                                          (isExtraPaid ? extraChargesTotal : 0);
+                        const balanceDue = isFinalPaid ? 0 : Math.max(0, total - totalPaid);
+
+                        return (
+                          <tr key={booking.id} className="hover:bg-gray-50/80 transition-colors">
+                            <td className="px-4 py-3.5">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(200,134,10,0.1)' }}>
+                                  <span className="text-xs font-bold" style={{ color: '#C8860A' }}>{booking.name.charAt(0)}</span>
+                                </div>
+                                <div>
+                                  <div className="font-medium text-gray-900 text-sm">{booking.name}</div>
+                                  <div className="text-xs text-gray-400">{booking.phone}</div>
+                                </div>
                               </div>
-                              <div>
-                                <div className="font-medium text-gray-900 text-sm">{booking.name}</div>
-                                <div className="text-xs text-gray-400">{booking.phone}</div>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <div className="text-sm text-gray-700">{booking.eventType}</div>
+                              <div className="text-xs text-gray-400">{booking.package}</div>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <div className="text-sm text-gray-700">{booking.date}</div>
+                              <div className="text-xs text-gray-400">{booking.time}</div>
+                            </td>
+
+                            {/* Total Amount */}
+                            <td className="px-4 py-3.5">
+                              <div className="text-sm font-bold text-gray-900">£{total.toLocaleString()}</div>
+                              <div className="text-[10px] text-gray-400">{booking.guests} Guests</div>
+                            </td>
+
+                            {/* Deposit Paid */}
+                            <td className="px-4 py-3.5">
+                              <div className={`text-sm font-bold ${isDepositPaid ? 'text-emerald-700' : 'text-gray-700'}`}>
+                                £{depositAmt.toLocaleString()}
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <div className="text-sm text-gray-700">{booking.eventType}</div>
-                            <div className="text-xs text-gray-400">{booking.package}</div>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <div className="text-sm text-gray-700">{booking.date}</div>
-                            <div className="text-xs text-gray-400">{booking.time}</div>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <div className="text-sm font-semibold text-gray-900">£{getTotalAmount(booking).toLocaleString()}</div>
-                            {booking.depositPaid && <div className="text-xs text-emerald-600">Dep. paid</div>}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            {booking.discount ? (
-                              <div className="text-sm font-semibold text-red-600">-£{getDiscountAmount(booking).toLocaleString()}</div>
-                            ) : (
-                              <div className="text-sm text-gray-400">—</div>
-                            )}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[booking.status]}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[booking.status]}`} />
-                              {STATUS_LABELS[booking.status]}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <a href={buildWhatsAppLink(booking.phone, `Hi ${booking.name.split(' ')[0]}, this is Honeymoon regarding your ${booking.eventType} booking on ${booking.date}.`)}
-                              target="_blank" rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
-                              style={{ background: '#25D366', color: 'white' }}>
-                              <Icon name="ChatBubbleLeftRightIcon" size={12} />
-                              Chat
-                            </a>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <div className="flex items-center gap-3">
-                              <button onClick={() => setSelectedBooking(booking)} className="text-xs font-semibold flex items-center gap-1 hover:underline whitespace-nowrap" style={{ color: '#C8860A' }}>
-                                Manage <Icon name="ChevronRightIcon" size={12} />
-                              </button>
-                              {currentUser?.role === 'Super Admin' && (
-                                <button onClick={() => handleDeleteBooking(booking.id, booking.name)} className="text-red-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors" title="Delete Booking">
-                                  <Icon name="TrashIcon" size={14} />
-                                </button>
+                              <div className="mt-0.5">
+                                <span className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                  isDepositPaid
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                }`}>
+                                  {isDepositPaid ? '✓ Paid' : 'Pending'}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Balance Due (Pending Amount) */}
+                            <td className="px-4 py-3.5">
+                              {isFinalPaid || balanceDue <= 0 ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                  <span>✓</span> Paid in Full
+                                </span>
+                              ) : (
+                                <div>
+                                  <div className="text-sm font-bold text-amber-900">
+                                    £{balanceDue.toLocaleString()}
+                                  </div>
+                                  <span className="text-[10px] text-amber-600 font-semibold">
+                                    Balance Due
+                                  </span>
+                                </div>
                               )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+
+                            {/* Discount */}
+                            <td className="px-4 py-3.5">
+                              {booking.discount ? (
+                                <div className="text-sm font-semibold text-red-600">-£{getDiscountAmount(booking).toLocaleString()}</div>
+                              ) : (
+                                <div className="text-sm text-gray-400">—</div>
+                              )}
+                            </td>
+
+                            {/* Status */}
+                            <td className="px-4 py-3.5">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[booking.status]}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[booking.status]}`} />
+                                {STATUS_LABELS[booking.status]}
+                              </span>
+                            </td>
+
+                            {/* WhatsApp */}
+                            <td className="px-4 py-3.5">
+                              <a href={buildWhatsAppLink(booking.phone, `Hi ${booking.name.split(' ')[0]}, this is Honeymoon regarding your ${booking.eventType} booking on ${booking.date}.`)}
+                                target="_blank" rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
+                                style={{ background: '#25D366', color: 'white' }}>
+                                <Icon name="ChatBubbleLeftRightIcon" size={12} />
+                                Chat
+                              </a>
+                            </td>
+
+                            {/* Actions */}
+                            <td className="px-4 py-3.5">
+                              <div className="flex items-center gap-2.5">
+                                <button onClick={() => setSelectedBooking(booking)} className="text-xs font-semibold flex items-center gap-1 hover:underline whitespace-nowrap" style={{ color: '#C8860A' }}>
+                                  Manage <Icon name="ChevronRightIcon" size={12} />
+                                </button>
+                                <div className="flex items-center gap-1 border-l border-gray-200 pl-2">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); generateChefMenuPDF(booking); }}
+                                    className="p-1 rounded hover:bg-amber-50 text-gray-400 hover:text-amber-700 transition-colors"
+                                    title="Download / Print Menu PDF (Chef Sheet)"
+                                  >
+                                    <Icon name="ClipboardDocumentListIcon" size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); downloadInvoicePDF(booking, true); }}
+                                    className="p-1 rounded hover:bg-emerald-50 text-gray-400 hover:text-emerald-700 transition-colors"
+                                    title="Download Deposit Invoice PDF"
+                                  >
+                                    <Icon name="DocumentTextIcon" size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); downloadInvoicePDF(booking, false); }}
+                                    className="p-1 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-700 transition-colors"
+                                    title="Download Final Invoice PDF"
+                                  >
+                                    <Icon name="DocumentCheckIcon" size={14} />
+                                  </button>
+                                </div>
+                                {currentUser?.role === 'Super Admin' && (
+                                  <button onClick={() => handleDeleteBooking(booking.id, booking.name)} className="text-red-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors" title="Delete Booking">
+                                    <Icon name="TrashIcon" size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                   {filtered.filter(b => b.status !== 'new_enquiry' && b.status !== 'completed').length === 0 && (
@@ -2555,8 +2653,8 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 }
                 setActiveTab(tab as AdminTab);
               }}
-              onGenerateInvoice={(b) => {
-                downloadInvoicePDF(b as Booking);
+              onGenerateInvoice={(b, isDepositOnly) => {
+                downloadInvoicePDF(b as Booking, isDepositOnly);
               }}
             />
           )}
@@ -2734,10 +2832,10 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       <tr>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Customer</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Event</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Total</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Amount</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Discount</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Deposit</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Balance</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Deposit Paid</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Balance Due</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Deposit Proof</th>
                         <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Final Proof</th>
                         <th className="px-4 py-3"></th>
@@ -2746,7 +2844,18 @@ Once you have completed the transfer, please send us a screenshot of the payment
                     <tbody className="divide-y divide-gray-50">
                       {bookings.filter(b => b.status !== 'new_enquiry').map((b) => {
                         const total = getTotalAmount(b);
-                        const balance = total - b.deposit;
+                        const extraChargesTotal = (b.extraCharges || []).reduce((s, c) => s + c.amount, 0);
+                        const isDepositPaid = b.depositPaid || !['new_enquiry', 'menu_sent', 'menu_selected', 'deposit_pending'].includes(b.status);
+                        const isFinalPaid = b.finalPaymentPaid || b.status === 'completed';
+                        const isExtraPaid = b.status === 'completed' || !!b.paymentProofExtra || b.finalPaymentPaid;
+
+                        const depositAmt = b.deposit || (pricingDetails.depositPercentage || 500);
+                        const finalPaymentAmt = Math.max(0, total - depositAmt - extraChargesTotal);
+                        const totalPaid = (isDepositPaid ? depositAmt : 0) +
+                                          (isFinalPaid ? finalPaymentAmt : 0) +
+                                          (isExtraPaid ? extraChargesTotal : 0);
+                        const balanceDue = isFinalPaid ? 0 : Math.max(0, total - totalPaid);
+
                         return (
                           <tr key={b.id} className="hover:bg-gray-50/80 transition-colors">
                             <td className="px-4 py-3.5">
@@ -2766,14 +2875,14 @@ Once you have completed the transfer, please send us a screenshot of the payment
                               )}
                             </td>
                             <td className="px-4 py-3.5">
-                              <div className={`text-sm font-medium ${b.depositPaid ? 'text-emerald-700' : 'text-amber-600'}`}>£{b.deposit.toLocaleString()}</div>
-                              <div className="text-xs text-gray-400">{b.depositPaid ? '✓ Paid' : 'Pending'}</div>
+                              <div className={`text-sm font-medium ${isDepositPaid ? 'text-emerald-700' : 'text-amber-600'}`}>£{depositAmt.toLocaleString()}</div>
+                              <div className="text-xs text-gray-400">{isDepositPaid ? '✓ Paid' : 'Pending'}</div>
                             </td>
                             <td className="px-4 py-3.5">
-                              {b.finalPaymentPaid ? (
+                              {isFinalPaid || balanceDue <= 0 ? (
                                 <span className="text-sm text-emerald-600 font-semibold">Paid in full</span>
                               ) : (
-                                <span className="text-sm font-semibold text-amber-700">£{balance.toLocaleString()}</span>
+                                <span className="text-sm font-semibold text-amber-700">£{balanceDue.toLocaleString()}</span>
                               )}
                             </td>
                             <td className="px-4 py-3.5">
@@ -3223,25 +3332,34 @@ Once you have completed the transfer, please send us a screenshot of the payment
                         <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[b.status]}`} />
                         {STATUS_LABELS[b.status]}
                       </span>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1.5 flex-wrap">
+                        {/* 1. Menu PDF for Chef */}
+                        <button
+                          onClick={() => generateChefMenuPDF(b)}
+                          className="text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-amber-200 shadow-2xs"
+                          title="Download / Print Chef Menu Sheet PDF"
+                        >
+                          <Icon name="ClipboardDocumentListIcon" size={13} className="text-[#C8860A]" />
+                          Menu PDF
+                        </button>
+                        {/* 2. Deposit Invoice */}
                         <button
                           onClick={() => downloadInvoicePDF(b, true)}
-                          className="text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold border border-emerald-200 shadow-sm"
+                          className="text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-emerald-200 shadow-2xs"
                           title="Download Deposit Invoice PDF"
                         >
-                          <Icon name="ArrowDownTrayIcon" size={14} />
-                          Deposit Invoice
+                          <Icon name="DocumentTextIcon" size={13} />
+                          Deposit PDF
                         </button>
-                        {b.status === 'completed' && (
-                          <button
-                            onClick={() => downloadInvoicePDF(b)}
-                            className="text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold border border-amber-200 shadow-sm"
-                            title="Download Final Invoice PDF"
-                          >
-                            <Icon name="ArrowDownTrayIcon" size={14} />
-                            Final Invoice
-                          </button>
-                        )}
+                        {/* 3. Final Invoice */}
+                        <button
+                          onClick={() => downloadInvoicePDF(b, false)}
+                          className="text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-blue-200 shadow-2xs"
+                          title="Download Final Invoice PDF"
+                        >
+                          <Icon name="DocumentCheckIcon" size={13} />
+                          Final PDF
+                        </button>
                       </div>
                       {currentUser?.role === 'Super Admin' && (
                         <button onClick={() => handleDeleteBooking(b.id, b.name)} className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 p-1.5 rounded-lg transition-colors" title="Delete History Record">
@@ -3938,6 +4056,69 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </div>
 
             <div className="flex-1 overflow-auto p-5 space-y-5">
+              {/* 3 PDFs System Card */}
+              <div className="bg-gradient-to-br from-amber-50/70 via-white to-gray-50 rounded-2xl p-4 border border-amber-200/80 shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-900 uppercase tracking-wide flex items-center gap-1.5">
+                    <Icon name="DocumentDuplicateIcon" size={15} className="text-[#C8860A]" />
+                    Booking Documents (3 PDFs)
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                    PDF &amp; Print
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {/* 1. Menu PDF */}
+                  <button
+                    type="button"
+                    onClick={() => generateChefMenuPDF(selectedBooking)}
+                    className="flex flex-col items-center justify-center gap-1 p-2.5 rounded-xl border border-amber-200 bg-white hover:bg-amber-50 transition-all font-bold text-amber-950 text-center shadow-2xs group"
+                    title="Download / Print Chef Menu Sheet PDF"
+                  >
+                    <Icon name="ClipboardDocumentListIcon" size={18} className="text-[#C8860A] group-hover:scale-110 transition-transform" />
+                    <span className="text-[11px] leading-tight font-extrabold">1. Menu PDF</span>
+                    <span className="text-[9px] text-gray-500 font-normal">Chef Sheet</span>
+                  </button>
+
+                  {/* 2. Deposit Invoice PDF */}
+                  <button
+                    type="button"
+                    onClick={() => downloadInvoicePDF(selectedBooking, true)}
+                    className="flex flex-col items-center justify-center gap-1 p-2.5 rounded-xl border border-emerald-200 bg-white hover:bg-emerald-50 transition-all font-bold text-emerald-950 text-center shadow-2xs group"
+                    title="Download Deposit Invoice PDF"
+                  >
+                    <Icon name="DocumentTextIcon" size={18} className="text-emerald-600 group-hover:scale-110 transition-transform" />
+                    <span className="text-[11px] leading-tight font-extrabold">2. Deposit PDF</span>
+                    <span className="text-[9px] text-gray-500 font-normal">Deposit Bill</span>
+                  </button>
+
+                  {/* 3. Final Invoice PDF */}
+                  <button
+                    type="button"
+                    onClick={() => downloadInvoicePDF(selectedBooking, false)}
+                    className="flex flex-col items-center justify-center gap-1 p-2.5 rounded-xl border border-blue-200 bg-white hover:bg-blue-50 transition-all font-bold text-blue-950 text-center shadow-2xs group"
+                    title="Download Final Invoice PDF"
+                  >
+                    <Icon name="DocumentCheckIcon" size={18} className="text-blue-600 group-hover:scale-110 transition-transform" />
+                    <span className="text-[11px] leading-tight font-extrabold">3. Final PDF</span>
+                    <span className="text-[9px] text-gray-500 font-normal">Total Bill</span>
+                  </button>
+                </div>
+
+                {/* Quick WhatsApp Menu to Chef */}
+                <button
+                  type="button"
+                  onClick={() => openChefWhatsApp(selectedBooking)}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold text-white shadow-2xs hover:shadow-xs transition-all"
+                  style={{ background: 'linear-gradient(135deg, #059669, #10B981)' }}
+                  title="Send menu details to Chef via WhatsApp"
+                >
+                  <Icon name="ChatBubbleLeftRightIcon" size={14} />
+                  <span>Send Menu to Chef via WhatsApp</span>
+                </button>
+              </div>
+
               {/* Customer info */}
               <div className="bg-gray-50 rounded-xl p-4">
                 <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Customer</div>
