@@ -566,9 +566,14 @@ export function generateChefMenuPDF(data: ChefMenuData): void {
             Ready to print or save as PDF. Formatted for A4 portrait with clear alignment and kitchen checklist.
           </div>
         </div>
-        <button class="action-btn" onclick="window.print()">
-          <span>🖨️ Print / Save as PDF</span>
-        </button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="action-btn" onclick="if(window.opener){window.close();}else{history.back();}" style="background:#4B5563;">
+            <span>✕ Close / Go Back</span>
+          </button>
+          <button class="action-btn" onclick="window.print()">
+            <span>🖨️ Print / Save as PDF</span>
+          </button>
+        </div>
       </div>
 
       <!-- Header -->
@@ -812,7 +817,10 @@ export function generateChefWhatsAppText(data: ChefMenuData): string {
 
 export function openChefWhatsApp(data: ChefMenuData, chefPhone?: string): void {
   const text = generateChefWhatsAppText(data);
-  const cleanPhone = chefPhone ? chefPhone.replace(/\D/g, '') : '';
+  let cleanPhone = chefPhone ? chefPhone.replace(/\D/g, '') : '';
+  if (cleanPhone.startsWith('0')) {
+    cleanPhone = '44' + cleanPhone.slice(1);
+  }
   const url = cleanPhone
     ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
     : `https://wa.me/?text=${encodeURIComponent(text)}`;

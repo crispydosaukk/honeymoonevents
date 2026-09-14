@@ -253,8 +253,28 @@ function getFirstDayOfMonth(year: number, month: number) {
   return new Date(year, month, 1).getDay();
 }
 
+function getKidsPrice(kidsPricingList?: { ageRange: string; price: string }[]): number {
+  if (!kidsPricingList || kidsPricingList.length === 0) return 20;
+  const match = kidsPricingList.find(k => {
+    const lower = k.ageRange.toLowerCase();
+    const isFree = lower.includes('free') || k.price.toLowerCase().includes('free') || lower.includes('under') || lower.includes('0-2') || lower.includes('0-4') || lower.includes('0 to 4');
+    return !isFree && (lower.includes('4-10') || lower.includes('3-10') || lower.includes('4 to 10') || lower.includes('kids') || lower.includes('child'));
+  }) || kidsPricingList.find(k => {
+    const lower = k.ageRange.toLowerCase();
+    return !lower.includes('under') && !lower.includes('0-2') && !lower.includes('0-4') && !k.price.toLowerCase().includes('free');
+  });
+  if (match) {
+    const num = parseInt(match.price.replace(/[^0-9]/g, ''));
+    if (!isNaN(num) && num > 0) return num;
+  }
+  return 20;
+}
+
 function buildWhatsAppLink(phone: string, message: string) {
-  const cleaned = phone.replace(/\D/g, '');
+  let cleaned = phone.replace(/\D/g, '');
+  if (cleaned.startsWith('0')) {
+    cleaned = '44' + cleaned.slice(1);
+  }
   return `https://wa.me/${cleaned}?text=${encodeURIComponent(message)}`;
 }
 
@@ -263,6 +283,86 @@ type AdminTab = 'overview' | 'enquiries' | 'bookings' | 'manual_booking' | 'cale
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
+  const openImagePreview = (imgUrl?: string, title: string = 'Payment Proof') => {
+    if (!imgUrl) return;
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${title}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body {
+            margin: 0;
+            padding: 0;
+            background: #111827;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            font-family: system-ui, sans-serif;
+          }
+          .nav {
+            position: sticky;
+            top: 0;
+            width: 100%;
+            background: #1f2937;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-sizing: border-box;
+            border-bottom: 1px solid #374151;
+            z-index: 50;
+          }
+          .title {
+            color: #f3f4f6;
+            font-size: 14px;
+            font-weight: 600;
+          }
+          .btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+          }
+          .img-container {
+            padding: 16px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            box-sizing: border-box;
+          }
+          img {
+            max-width: 100%;
+            max-height: 85vh;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+          }
+        </style>
+      </head>
+      <body>
+        <div class="nav">
+          <span class="title">${title}</span>
+          <button class="btn" onclick="if(window.opener){window.close();}else{history.back();}">✕ Close / Go Back</button>
+        </div>
+        <div class="img-container">
+          <img src="${imgUrl}" alt="${title}"/>
+        </div>
+      </body>
+      </html>
+    `);
+    w.document.close();
+  };
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [bookings, setBookings] = useState<Booking[]>(SAMPLE_BOOKINGS);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -736,8 +836,7 @@ export default function AdminPage() {
     const adults = booking.adults ?? booking.guests;
     const kids4to10 = booking.kids4to10 || 0;
     const kidsUnder4 = booking.kidsUnder4 || 0;
-    const kidsPriceStr = editableKidsPricing.find(k => k.ageRange.includes('3-10') || k.ageRange.includes('4-10') || k.ageRange.includes('4'))?.price || '20';
-    const kidsPrice = parseInt(kidsPriceStr.replace(/[^0-9]/g, '')) || 20;
+    const kidsPrice = getKidsPrice(editableKidsPricing);
 
     const guestBreakdown = `• Adults: ${adults} × £${editableBanquetPackages.find(p => p.name === (booking.selectedMenu || booking.package))?.pricePerPerson || 0}/person\n• Kids (4-10 yrs): ${kids4to10} × £${kidsPrice}/person\n• Kids (0-4 yrs): ${kidsUnder4} × Free`;
 
@@ -786,8 +885,7 @@ It was an absolute pleasure serving you. We hope you and your guests had a wonde
     const adults = booking.adults ?? booking.guests;
     const kids4to10 = booking.kids4to10 || 0;
     const kidsUnder4 = booking.kidsUnder4 || 0;
-    const kidsPriceStr = editableKidsPricing.find(k => k.ageRange.includes('3-10') || k.ageRange.includes('4-10') || k.ageRange.includes('4'))?.price || '20';
-    const kidsPrice = parseInt(kidsPriceStr.replace(/[^0-9]/g, '')) || 20;
+    const kidsPrice = getKidsPrice(editableKidsPricing);
     const pricePerPerson = editableBanquetPackages.find(p => p.name === (booking.selectedMenu || booking.package))?.pricePerPerson || 0;
 
     const guestBreakdown = `*👥 Guest Breakdown:*\n• Adults: ${adults} × £${pricePerPerson}/person = £${(adults * pricePerPerson).toLocaleString()}\n• Kids (4-10 yrs): ${kids4to10} × £${kidsPrice}/person = £${(kids4to10 * kidsPrice).toLocaleString()}\n• Kids (0-4 yrs): ${kidsUnder4} × Free = £0\n• Total Guests: ${adults + kids4to10 + kidsUnder4}`;
@@ -1244,6 +1342,38 @@ Once you have completed the transfer, please send us a screenshot of the payment
     const currentBooking = bookings.find(b => b.id === id);
     if (!currentBooking) return;
 
+    const isSuperAdmin = !currentUser?.role || currentUser?.role === 'Super Admin';
+
+    if (isSuperAdmin) {
+      const discount: Discount = {
+        type: discountType,
+        value: parseFloat(discountValue),
+        reason: discountReason
+      };
+      setBookings(prev => prev.map(b => b.id === id ? { ...b, discount, discountRequest: undefined } : b));
+      setSelectedBooking(prev => prev?.id === id ? { ...prev, discount, discountRequest: undefined } : prev);
+
+      try {
+        await setDoc(doc(db, 'booking_requests', id), { discount, discountRequest: null }, { merge: true });
+        const bookingData = {
+          ...currentBooking,
+          discount,
+          discountRequest: null,
+          updatedAt: new Date().toISOString()
+        };
+        const cleanBookingData = Object.fromEntries(
+          Object.entries(bookingData).filter(([_, v]) => v !== undefined)
+        );
+        await setDoc(doc(db, 'bookings', id), cleanBookingData, { merge: true });
+      } catch (error) {
+        console.error('Error applying discount:', error);
+      }
+      setDiscountValue('');
+      setDiscountReason('');
+      setCustomAlert({ message: 'Discount applied successfully!', type: 'success' });
+      return;
+    }
+
     const discountReq: DiscountRequest = {
       type: discountType,
       value: parseFloat(discountValue),
@@ -1501,8 +1631,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
     const adults = booking.adults ?? booking.guests;
     const kids4to10 = booking.kids4to10 || 0;
     const kidsUnder4 = booking.kidsUnder4 || 0;
-    const kidsPriceStr = editableKidsPricing.find(k => k.ageRange.includes('3-10') || k.ageRange.includes('4-10') || k.ageRange.includes('4'))?.price || '20';
-    const kidsPrice = parseInt(kidsPriceStr.replace(/[^0-9]/g, '')) || 20;
+    const kidsPrice = getKidsPrice(editableKidsPricing);
     const pricePerPerson = editableBanquetPackages.find(p => p.name === (booking.selectedMenu || booking.package))?.pricePerPerson || 0;
     const hallCharge = getVenueHallCharge(booking.date, booking.time);
     const grandTotal = getTotalAmount(booking);
@@ -1571,7 +1700,34 @@ Once you have completed the transfer, please send us a screenshot of the payment
       <html>
       <head>
         <title>Booking Summary & Invoice - ${booking.name}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
+          @media print {
+            .no-print-bar { display: none !important; }
+            body { padding: 0 !important; }
+          }
+          .no-print-bar {
+            position: sticky;
+            top: 0;
+            background: #1f2937;
+            color: white;
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 9999;
+            margin: -40px -40px 20px -40px;
+          }
+          .no-print-btn {
+            background: #C8860A;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 13px;
+          }
           body {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             color: #333;
@@ -1726,6 +1882,10 @@ Once you have completed the transfer, please send us a screenshot of the payment
         </style>
       </head>
       <body>
+        <div class="no-print-bar">
+          <button class="no-print-btn" onclick="if(window.opener){window.close();}else{history.back();}" style="background:#4B5563;">✕ Close / Go Back</button>
+          <button class="no-print-btn" onclick="window.print()">🖨️ Print / Save PDF</button>
+        </div>
         <div class="header">
           <div class="header-left">
             <h1>INVOICE & ORDER SUMMARY</h1>
@@ -3405,12 +3565,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           <div
                             className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group bg-gray-50 flex-shrink-0"
                             onClick={() => {
-                              if (b.paymentProofDeposit?.startsWith('data:image')) {
-                                const w = window.open('');
-                                w?.document.write(`<img src="${b.paymentProofDeposit}" style="max-width: 100%; height: auto;"/>`);
-                              } else {
-                                window.open(b.paymentProofDeposit, '_blank');
-                              }
+                              openImagePreview(b.paymentProofDeposit, "Deposit Payment Proof");
                             }}
                             title="View Deposit Proof"
                           >
@@ -3425,12 +3580,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           <div
                             className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group bg-gray-50 flex-shrink-0"
                             onClick={() => {
-                              if (b.paymentProofFinal?.startsWith('data:image')) {
-                                const w = window.open('');
-                                w?.document.write(`<img src="${b.paymentProofFinal}" style="max-width: 100%; height: auto;"/>`);
-                              } else {
-                                window.open(b.paymentProofFinal, '_blank');
-                              }
+                              openImagePreview(b.paymentProofFinal, "Final Payment Proof");
                             }}
                             title="View Final Proof"
                           >
@@ -3445,12 +3595,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           <div
                             className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group bg-gray-50 flex-shrink-0"
                             onClick={() => {
-                              if (b.paymentProofExtra?.startsWith('data:image')) {
-                                const w = window.open('');
-                                w?.document.write(`<img src="${b.paymentProofExtra}" style="max-width: 100%; height: auto;"/>`);
-                              } else {
-                                window.open(b.paymentProofExtra, '_blank');
-                              }
+                              openImagePreview(b.paymentProofExtra, "Extra Charges Payment Proof");
                             }}
                             title="View Extra Proof"
                           >
@@ -3707,12 +3852,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                   <div 
                                     className="w-full h-24 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group relative"
                                     onClick={() => {
-                                      if (b.paymentProofDeposit?.startsWith('data:image')) {
-                                        const w = window.open('');
-                                        w?.document.write(`<img src="${b.paymentProofDeposit}" style="max-width: 100%; height: auto;"/>`);
-                                      } else {
-                                        window.open(b.paymentProofDeposit, '_blank');
-                                      }
+                                      openImagePreview(b.paymentProofDeposit, "Deposit Payment Proof");
                                     }}
                                   >
                                     <img src={b.paymentProofDeposit} alt="Deposit Proof" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
@@ -3937,12 +4077,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                       <div className="flex items-center gap-2 text-emerald-600 font-semibold"><Icon name="CheckCircleIcon" size={18} /> Deposit fully received.</div>
                                       {tb.paymentProofDeposit && (
                                         <div className="group relative w-24 h-24 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm" onClick={() => {
-                                          if (tb.paymentProofDeposit?.startsWith('data:image')) {
-                                            const w = window.open('');
-                                            w?.document.write(`<img src="${tb.paymentProofDeposit}" style="max-width: 100%; height: auto;"/>`);
-                                          } else {
-                                            window.open(tb.paymentProofDeposit, '_blank');
-                                          }
+                                          openImagePreview(tb.paymentProofDeposit, "Deposit Payment Proof");
                                         }}>
                                           <img src={tb.paymentProofDeposit} alt="Deposit Proof" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"><Icon name="MagnifyingGlassPlusIcon" size={20} /></div>
@@ -3958,12 +4093,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                       <div className="flex items-center gap-2 text-emerald-600 font-semibold"><Icon name="CheckCircleIcon" size={18} /> Final Payment fully received.</div>
                                       {tb.paymentProofFinal && (
                                         <div className="group relative w-24 h-24 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm" onClick={() => {
-                                          if (tb.paymentProofFinal?.startsWith('data:image')) {
-                                            const w = window.open('');
-                                            w?.document.write(`<img src="${tb.paymentProofFinal}" style="max-width: 100%; height: auto;"/>`);
-                                          } else {
-                                            window.open(tb.paymentProofFinal, '_blank');
-                                          }
+                                          openImagePreview(tb.paymentProofFinal, "Final Payment Proof");
                                         }}>
                                           <img src={tb.paymentProofFinal} alt="Final Proof" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"><Icon name="MagnifyingGlassPlusIcon" size={20} /></div>
@@ -3981,12 +4111,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                         <div className="pt-2 mt-2 border-t border-gray-100">
                                           <div className="mb-2 text-emerald-600 font-semibold flex items-center gap-1.5"><Icon name="BanknotesIcon" size={16} /> Extra Charges Paid</div>
                                           <div className="group relative w-24 h-24 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm" onClick={() => {
-                                            if (tb.paymentProofExtra?.startsWith('data:image')) {
-                                              const w = window.open('');
-                                              w?.document.write(`<img src="${tb.paymentProofExtra}" style="max-width: 100%; height: auto;"/>`);
-                                            } else {
-                                              window.open(tb.paymentProofExtra, '_blank');
-                                            }
+                                            openImagePreview(tb.paymentProofExtra, "Extra Charges Payment Proof");
                                           }}>
                                             <img src={tb.paymentProofExtra} alt="Extra Proof" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"><Icon name="MagnifyingGlassPlusIcon" size={20} /></div>
@@ -4504,7 +4629,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           let selectedPkgName = '';
                           let baseAmount = 0;
 
-                          const foundExtra = editableLiveCounter.extras.find(ex => ex.name === val);
+                          const foundExtra = (editableLiveCounter?.extras || []).find(ex => ex.name === val);
 
                           if (val === 'custom') {
                             selectedPkgName = 'Custom Package';
@@ -4525,8 +4650,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           const adults = selectedBooking.adults ?? selectedBooking.guests;
                           const kids4to10 = selectedBooking.kids4to10 || 0;
                           
-                          const kidsPriceStr = editableKidsPricing.find(k => k.ageRange.includes('3-10') || k.ageRange.includes('4-10') || k.ageRange.includes('4'))?.price || '20';
-                          const kidsPrice = parseInt(kidsPriceStr.replace(/[^0-9]/g, '')) || 20;
+                          const kidsPrice = getKidsPrice(editableKidsPricing);
 
                           if (!foundExtra && val !== 'custom') {
                             baseAmount = (adults * pricePerPerson) + (kids4to10 * kidsPrice);
@@ -4670,8 +4794,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                               const found = editableBanquetPackages.find(p => p.name === (selectedBooking.selectedMenu || selectedBooking.package));
                               if (found) pricePerPerson = found.pricePerPerson;
 
-                              const kidsPriceStr = editableKidsPricing.find(k => k.ageRange.includes('3-10') || k.ageRange.includes('4-10') || k.ageRange.includes('4'))?.price || '20';
-                              const kidsPrice = parseInt(kidsPriceStr.replace(/[^0-9]/g, '')) || 20;
+                              const kidsPrice = getKidsPrice(editableKidsPricing);
 
                               const baseAmount = (adults * pricePerPerson) + (kids4to10 * kidsPrice);
                               const deposit = Math.max(selectedBooking.deposit || 0, pricingDetails.depositPercentage);
@@ -4703,8 +4826,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                               const found = editableBanquetPackages.find(p => p.name === (selectedBooking.selectedMenu || selectedBooking.package));
                               if (found) pricePerPerson = found.pricePerPerson;
 
-                              const kidsPriceStr = editableKidsPricing.find(k => k.ageRange.includes('3-10') || k.ageRange.includes('4-10') || k.ageRange.includes('4'))?.price || '20';
-                              const kidsPrice = parseInt(kidsPriceStr.replace(/[^0-9]/g, '')) || 20;
+                              const kidsPrice = getKidsPrice(editableKidsPricing);
 
                               const baseAmount = (adults * pricePerPerson) + (kids4to10 * kidsPrice);
                               const deposit = Math.max(selectedBooking.deposit || 0, pricingDetails.depositPercentage);
@@ -4736,8 +4858,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                               const found = editableBanquetPackages.find(p => p.name === (selectedBooking.selectedMenu || selectedBooking.package));
                               if (found) pricePerPerson = found.pricePerPerson;
 
-                              const kidsPriceStr = editableKidsPricing.find(k => k.ageRange.includes('3-10') || k.ageRange.includes('4-10') || k.ageRange.includes('4'))?.price || '20';
-                              const kidsPrice = parseInt(kidsPriceStr.replace(/[^0-9]/g, '')) || 20;
+                              const kidsPrice = getKidsPrice(editableKidsPricing);
 
                               const baseAmount = (adults * pricePerPerson) + (kids4to10 * kidsPrice);
                               const deposit = Math.max(selectedBooking.deposit || 0, pricingDetails.depositPercentage);
@@ -4831,8 +4952,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       const adults = selectedBooking.adults ?? selectedBooking.guests;
                       const kids4to10 = selectedBooking.kids4to10 || 0;
                       const kidsUnder4 = selectedBooking.kidsUnder4 || 0;
-                      const kidsPriceStr = editableKidsPricing.find(k => k.ageRange.includes('3-10') || k.ageRange.includes('4-10') || k.ageRange.includes('4'))?.price || '20';
-                      const kidsPrice = parseInt(kidsPriceStr.replace(/[^0-9]/g, '')) || 20;
+                      const kidsPrice = getKidsPrice(editableKidsPricing);
                       const estTotal = (pkg.pricePerPerson * adults) + (kids4to10 * kidsPrice);
                       const totalGuests = adults + kids4to10 + kidsUnder4;
                       
@@ -4935,12 +5055,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                         <div
                           className="relative w-24 h-24 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group flex-shrink-0 bg-gray-50"
                           onClick={() => {
-                            if (selectedBooking.paymentProofDeposit?.startsWith('data:image')) {
-                              const w = window.open('');
-                              w?.document.write(`<img src="${selectedBooking.paymentProofDeposit}" style="max-width: 100%; height: auto;"/>`);
-                            } else {
-                              window.open(selectedBooking.paymentProofDeposit, '_blank');
-                            }
+                            openImagePreview(selectedBooking.paymentProofDeposit, "Deposit Payment Proof");
                           }}
                           title="Click to view full image"
                         >
@@ -5168,7 +5283,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
               )}
 
               {/* Step: Apply Discount */}
-              {['final_invoice_sent'].includes(selectedBooking.status) && (
+              {!['completed', 'final_payment_received'].includes(selectedBooking.status) && (
                 <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50 mt-4">
                   <div className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-3">Apply Discount</div>
                   {selectedBooking.discount ? (
@@ -5400,12 +5515,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           <div
                             className="relative w-24 h-24 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group flex-shrink-0 bg-gray-50"
                             onClick={() => {
-                              if (selectedBooking.paymentProofFinal?.startsWith('data:image')) {
-                                const w = window.open('');
-                                w?.document.write(`<img src="${selectedBooking.paymentProofFinal}" style="max-width: 100%; height: auto;"/>`);
-                              } else {
-                                window.open(selectedBooking.paymentProofFinal, '_blank');
-                              }
+                              openImagePreview(selectedBooking.paymentProofFinal, "Final Payment Proof");
                             }}
                             title="Click to view full image"
                           >
@@ -5488,8 +5598,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                     const adults = selectedBooking.adults ?? selectedBooking.guests;
                     const kids4to10 = selectedBooking.kids4to10 || 0;
                     const kidsUnder4 = selectedBooking.kidsUnder4 || 0;
-                    const kidsPriceStr = editableKidsPricing.find(k => k.ageRange.includes('3-10') || k.ageRange.includes('4-10') || k.ageRange.includes('4'))?.price || '20';
-                    const kidsPrice = parseInt(kidsPriceStr.replace(/[^0-9]/g, '')) || 20;
+                    const kidsPrice = getKidsPrice(editableKidsPricing);
                     const pricePerPerson = editableBanquetPackages.find(p => p.name === (selectedBooking.selectedMenu || selectedBooking.package))?.pricePerPerson || 0;
                     const hasKids = kids4to10 > 0 || kidsUnder4 > 0;
                     return (
@@ -5873,12 +5982,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                               <div
                                 className="relative w-24 h-24 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group flex-shrink-0 bg-gray-50"
                                 onClick={() => {
-                                  if (selectedBooking.paymentProofExtra?.startsWith('data:image')) {
-                                    const w = window.open('');
-                                    w?.document.write(`<img src="${selectedBooking.paymentProofExtra}" style="max-width: 100%; height: auto;"/>`);
-                                  } else {
-                                    window.open(selectedBooking.paymentProofExtra, '_blank');
-                                  }
+                                  openImagePreview(selectedBooking.paymentProofExtra, "Extra Charges Payment Proof");
                                 }}
                                 title="Click to view full image"
                               >

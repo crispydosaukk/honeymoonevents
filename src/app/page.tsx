@@ -137,6 +137,14 @@ export default function HomePage() {
     try {
       const fullPhone = bookingForm.phone ? `+44${bookingForm.phone.replace(/^0/, '').replace(/\s/g, '')}` : '';
       const guestCount = Number(bookingForm.guests) || 0;
+    if (guestCount < 30) {
+      setCustomHomeAlert({
+        message: "Minimum 30 guests required to submit a booking request.",
+        type: 'error'
+      });
+      setIsSubmitting(false);
+      return;
+    }
       const selectedPkg = BANQUET_PACKAGES.find(p => p.name === bookingForm.selectedPackage);
       const selectedExtra = LIVE_COUNTER_PACKAGE?.extras?.find(e => e.name === bookingForm.selectedPackage);
       let baseAmount = 0;
@@ -329,7 +337,7 @@ export default function HomePage() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Guests *</label>
-                      <input type="number" required min={1} max={500} value={bookingForm.guests} onChange={(e) => setBookingForm({ ...bookingForm, guests: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500" placeholder="e.g. 100" />
+                      <input type="number" required min={30} max={500} value={bookingForm.guests} onChange={(e) => setBookingForm({ ...bookingForm, guests: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500" placeholder="e.g. 30" />
                     </div>
                   </div>
                   <div>
@@ -1036,7 +1044,7 @@ export default function HomePage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Number of Guests *</label>
-                  <input type="number" required min={1} max={500} value={bookingForm.guests} onChange={(e) => setBookingForm({ ...bookingForm, guests: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500" placeholder="e.g. 100" />
+                  <input type="number" required min={30} max={500} value={bookingForm.guests} onChange={(e) => setBookingForm({ ...bookingForm, guests: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500" placeholder="e.g. 30" />
                 </div>
               </div>
               <div>

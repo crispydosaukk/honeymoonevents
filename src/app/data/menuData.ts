@@ -215,7 +215,7 @@ export const KIDS_PRICING = [
 ];
 
 export const STANDARD_SETUP = {
-  minimumAdults: 50,
+  minimumAdults: 30,
   includes: [
     'White Tablecloths & Chair Covers',
     'Gold Sashes Ribbons',

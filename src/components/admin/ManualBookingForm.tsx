@@ -67,6 +67,14 @@ export interface ManualBookingFormProps {
   onGenerateInvoice?: (booking: any, isDepositOnly?: boolean) => void;
 }
 
+function formatWhatsAppPhone(phone: string): string {
+  let cleaned = phone.replace(/\D/g, '');
+  if (cleaned.startsWith('0')) {
+    cleaned = '44' + cleaned.slice(1);
+  }
+  return cleaned;
+}
+
 export default function ManualBookingForm({
   configuredExtraCharges = [],
   blockedDates = [],
@@ -184,7 +192,14 @@ export default function ManualBookingForm({
 
   // Kids price per head
   const kidsPrice = useMemo(() => {
-    const found = kidsPricing.find((k) => k.ageRange.includes('3-10') || k.ageRange.includes('4-10') || k.ageRange.includes('4'));
+    const found = kidsPricing.find((k) => {
+      const lower = k.ageRange.toLowerCase();
+      const isFree = lower.includes('free') || k.price.toLowerCase().includes('free') || lower.includes('under') || lower.includes('0-2') || lower.includes('0-4') || lower.includes('0 to 4');
+      return !isFree && (lower.includes('4-10') || lower.includes('3-10') || lower.includes('4 to 10') || lower.includes('kids') || lower.includes('child'));
+    }) || kidsPricing.find(k => {
+      const lower = k.ageRange.toLowerCase();
+      return !lower.includes('under') && !lower.includes('0-2') && !lower.includes('0-4') && !k.price.toLowerCase().includes('free');
+    });
     return found ? parseInt(found.price.replace(/[^0-9]/g, '')) || 20 : 20;
   }, [kidsPricing]);
 
@@ -2186,7 +2201,7 @@ export default function ManualBookingForm({
                       </div>
                       {customerDetails.phone ? (
                         <a
-                          href={`https://wa.me/${customerDetails.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                          href={`https://wa.me/${formatWhatsAppPhone(customerDetails.phone)}?text=${encodeURIComponent(
                             `Hi ${customerDetails.name.split(' ')[0] || 'there'}, here are our bank transfer details for your ${customerDetails.eventType || 'event'} booking on ${customerDetails.date || 'upcoming date'} with Honeymoon Events 🎉:\n\n*💰 Amount to Transfer: £${amountPaid.toLocaleString()}*\n\n🏦 *Account Name:* ${bankDetails?.accountName || 'Honeymoon Events Ltd'}\n📋 *Sort Code:* ${bankDetails?.sortCode || '00-00-00'}\n🔢 *Account No:* ${bankDetails?.accountNumber || '12345678'}\n📌 *Payment Reference:* ${customerDetails.name ? customerDetails.name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) : 'HONEYMOON'}\n\nOnce transferred, please share your confirmation screenshot here. Thank you!`
                           )}`}
                           target="_blank"
@@ -2549,7 +2564,7 @@ export default function ManualBookingForm({
 
             {/* WhatsApp Confirmation to Customer */}
             <a
-              href={`https://wa.me/${createdBooking.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+              href={`https://wa.me/${formatWhatsAppPhone(createdBooking.phone)}?text=${encodeURIComponent(
                 createdBooking.finalPaymentPaid || createdBooking.status === 'completed'
                   ? `Hi ${createdBooking.name.split(' ')[0]}, thank you for confirming your booking with Honeymoon Events! 🎉\n\n*Booking Ref:* ${createdBooking.id}\n*Event:* ${createdBooking.eventType} on ${createdBooking.date} (${createdBooking.time})\n*Package:* ${createdBooking.package} for ${createdBooking.guests} guests\n*Grand Total:* £${grandTotal.toLocaleString()}\n*Payment Status:* Paid in Full via ${paymentMethod} ✅\n*Order Status:* Closed & Confirmed\n\nWe look forward to hosting your memorable event! Please contact us if you need any assistance.`
                   : `Hi ${createdBooking.name.split(' ')[0]}, thank you for confirming your booking with Honeymoon Events! 🎉\n\nBooking Ref: ${createdBooking.id}\nEvent: ${createdBooking.eventType} on ${createdBooking.date} (${createdBooking.time})\nPackage: ${createdBooking.package} for ${createdBooking.guests} guests\nTotal: £${grandTotal.toLocaleString()}\nAmount Paid: £${amountPaid.toLocaleString()} (${paymentMethod})\nRemaining Balance: £${(grandTotal - amountPaid).toLocaleString()}\n\nWe look forward to hosting your memorable event!`
