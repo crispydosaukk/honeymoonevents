@@ -15,14 +15,14 @@ const Header: React.FC<HeaderProps> = () => {
     <nav className="fixed top-0 left-0 right-0 z-50 bg-midnight border-b border-midnight-border">
       <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
         {/* Logo */}
-        <a href="/" className="flex items-center gap-2.5">
+        <a href="/" className="flex items-center gap-2">
           <Image
             src="/assets/images/oie_gAxqzQFu0Ixw-1777831503416.png"
             alt="Honeymoon logo"
-            width={120}
-            height={48}
+            width={100}
+            height={32}
             className="object-contain"
-            style={{ maxHeight: '48px', width: 'auto' }}
+            style={{ maxHeight: '32px', width: 'auto' }}
           />
         </a>
 

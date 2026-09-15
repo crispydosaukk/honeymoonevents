@@ -75,6 +75,11 @@ interface Booking {
     desserts?: string[];
     [key: string]: any;
   };
+  pricePerPerson?: number;
+  kidsPricePerPerson?: number;
+  kidsUnder4PricePerPerson?: number;
+  priceOverrides?: Record<string, any>;
+  customPriceReasons?: string[];
   enquiryDate: string;
   updatedAt?: string;
   createdAt?: string;
@@ -438,6 +443,11 @@ export default function AdminPage() {
           discount: data.discount,
           discountRequest: data.discountRequest,
           selectedDishes: data.selectedDishes,
+          pricePerPerson: data.pricePerPerson,
+          kidsPricePerPerson: data.kidsPricePerPerson,
+          kidsUnder4PricePerPerson: data.kidsUnder4PricePerPerson,
+          priceOverrides: data.priceOverrides,
+          customPriceReasons: data.customPriceReasons,
           enquiryDate: data.createdAt ? new Date(data.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
           dueDate: (() => {
             if (data.dueDate) return data.dueDate;
@@ -1631,9 +1641,10 @@ Once you have completed the transfer, please send us a screenshot of the payment
     const adults = booking.adults ?? booking.guests;
     const kids4to10 = booking.kids4to10 || 0;
     const kidsUnder4 = booking.kidsUnder4 || 0;
-    const kidsPrice = getKidsPrice(editableKidsPricing);
-    const pricePerPerson = editableBanquetPackages.find(p => p.name === (booking.selectedMenu || booking.package))?.pricePerPerson || 0;
-    const hallCharge = getVenueHallCharge(booking.date, booking.time);
+    const kidsPrice = booking.kidsPricePerPerson ?? getKidsPrice(editableKidsPricing);
+    const kidsUnder4Price = booking.kidsUnder4PricePerPerson ?? 0;
+    const pricePerPerson = booking.pricePerPerson ?? (editableBanquetPackages.find(p => p.name === (booking.selectedMenu || booking.package))?.pricePerPerson || 0);
+    const hallCharge = (booking.extraCharges || []).some(e => e.label.toLowerCase().includes('hall hire')) ? null : getVenueHallCharge(booking.date, booking.time);
     const grandTotal = getTotalAmount(booking);
     const discountAmount = getDiscountAmount(booking);
     const finalPaymentPaidAmt = grandTotal - booking.deposit - extraChargesTotal;
@@ -1886,56 +1897,6 @@ Once you have completed the transfer, please send us a screenshot of the payment
           <button class="no-print-btn" onclick="if(window.opener){window.close();}else{history.back();}" style="background:#4B5563;">✕ Close / Go Back</button>
           <button class="no-print-btn" onclick="window.print()">🖨️ Print / Save PDF</button>
         </div>
-        <div class="header">
-          <div class="header-left">
-            <h1>INVOICE & ORDER SUMMARY</h1>
-            <p>Booking Reference: <strong>#${booking.id}</strong></p>
-            <p>Enquiry Date: ${formattedEnquiryDate}</p>
-          </div>
-          <img class="logo" src="${logoUrl}" alt="Honeymoon Events Logo" />
-        </div>
-
-        <div class="grid-2">
-          <div class="details-card">
-            <h3>Customer Details</h3>
-            <div class="details-row">
-              <span class="details-label">Name</span>
-              <span class="details-value">${booking.name || 'N/A'}</span>
-            </div>
-            <div class="details-row">
-              <span class="details-label">Phone</span>
-              <span class="details-value">${booking.phone || 'N/A'}</span>
-            </div>
-            <div class="details-row">
-              <span class="details-label">Email</span>
-              <span class="details-value">${booking.email || 'N/A'}</span>
-            </div>
-          </div>
-
-          <div class="details-card">
-            <h3>Event Details</h3>
-            <div class="details-row">
-              <span class="details-label">Event Type</span>
-              <span class="details-value">${booking.eventType || 'N/A'}</span>
-            </div>
-            <div class="details-row">
-              <span class="details-label">Date & Time</span>
-              <span class="details-value">${formattedDate} (${booking.time || 'N/A'})</span>
-            </div>
-            <div class="details-row">
-              <span class="details-label">Total Guests</span>
-              <span class="details-value">${adults + kids4to10 + kidsUnder4} Guests</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="section-title">Order Items & Package details</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Description</th>
-              <th class="text-right">Amount</th>
-            </tr>
           </thead>
           <tbody>
             <tr>
