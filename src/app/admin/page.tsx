@@ -269,8 +269,9 @@ function getKidsPrice(kidsPricingList?: { ageRange: string; price: string }[]): 
     return !lower.includes('under') && !lower.includes('0-2') && !lower.includes('0-4') && !k.price.toLowerCase().includes('free');
   });
   if (match) {
-    const num = parseInt(match.price.replace(/[^0-9]/g, ''));
-    if (!isNaN(num) && num > 0) return num;
+    const matchNum = match.price.match(/\d+(\.\d+)?/);
+    const num = matchNum ? parseFloat(matchNum[0]) : NaN;
+    if (!isNaN(num) && num > 0 && num <= 500) return num;
   }
   return 20;
 }
@@ -2115,7 +2116,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
   const eventTypes = [...new Set(bookings.map(b => b.eventType))];
 
   const filtered = bookings.filter(b => {
-    const statusMatch = filterStatus === 'all' || b.status === filterStatus;
+    const statusMatch = filterStatus === 'all' || (filterStatus === 'event_completed' ? (b.status === 'event_completed' || b.status === 'completed') : b.status === filterStatus);
     const eventMatch = filterEvent === 'all' || b.eventType === filterEvent;
     return statusMatch && eventMatch;
   });
@@ -2520,7 +2521,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-1.5 flex-wrap">
                     <Icon name="FunnelIcon" size={14} className="text-gray-400" />
                     <span className="text-xs text-gray-500 font-medium">Status:</span>
-                    {['all', ...STATUS_FLOW.filter(s => s !== 'new_enquiry' && s !== 'completed')].map((s) => (
+                    {['all', ...STATUS_FLOW.filter(s => s !== 'new_enquiry')].map((s) => (
                       <button key={s} onClick={() => setFilterStatus(s)}
                         className={`px-2.5 py-1 rounded-lg text-xs font-medium capitalize transition-colors ${filterStatus === s ? 'text-white' : 'text-gray-500 hover:bg-gray-100'}`}
                         style={filterStatus === s ? { background: 'linear-gradient(135deg, #C8860A, #F0A830)' } : {}}>
@@ -2562,7 +2563,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {filtered.filter(b => b.status !== 'new_enquiry' && b.status !== 'completed').map((booking) => {
+                      {filtered.filter(b => b.status !== 'new_enquiry').map((booking) => {
                         const total = getTotalAmount(booking);
                         const extraChargesTotal = (booking.extraCharges || []).reduce((s, c) => s + c.amount, 0);
                         const isDepositPaid = booking.depositPaid || !['new_enquiry', 'menu_sent', 'menu_selected', 'deposit_pending'].includes(booking.status);
@@ -2710,7 +2711,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       })}
                     </tbody>
                   </table>
-                  {filtered.filter(b => b.status !== 'new_enquiry' && b.status !== 'completed').length === 0 && (
+                  {filtered.filter(b => b.status !== 'new_enquiry').length === 0 && (
                     <div className="text-center py-12 text-gray-400 text-sm">
                       <Icon name="CalendarDaysIcon" size={32} className="mx-auto mb-2 text-gray-300" />
                       No bookings match your filters

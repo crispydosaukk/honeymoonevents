@@ -98,7 +98,20 @@ export default function ManualBookingForm({
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
 
   // ── Step 1: Customer & Event Details ──
-  const [customerDetails, setCustomerDetails] = useState({
+  const [customerDetails, setCustomerDetails] = useState<{
+    name: string;
+    phone: string;
+    email: string;
+    eventType: string;
+    customEventType: string;
+    date: string;
+    timeSession: string;
+    customTime: string;
+    adults: number | string;
+    kids4to10: number | string;
+    kidsUnder4: number | string;
+    notes: string;
+  }>({
     name: '',
     phone: '',
     email: '',
@@ -118,21 +131,21 @@ export default function ManualBookingForm({
   // ── Step 2: Menu & Package Selection ──
   const [menuTab, setMenuTab] = useState<'packages' | 'indian' | 'srilankan' | 'live' | 'hall'>('packages');
   const [selectedPackageId, setSelectedPackageId] = useState<string>('silver');
-  const [selectedPackageCustomPrice, setSelectedPackageCustomPrice] = useState<number>(35);
+  const [selectedPackageCustomPrice, setSelectedPackageCustomPrice] = useState<number | string>(35);
 
   // ── Price Overrides & Flexibility (Local to Manual Booking Flow Only) ──
   // Adult / Package rate override
-  const [packagePriceOverride, setPackagePriceOverride] = useState<number | null>(null);
+  const [packagePriceOverride, setPackagePriceOverride] = useState<number | string | null>(null);
   const [packagePriceOverrideReason, setPackagePriceOverrideReason] = useState<string>('');
   const [showPackagePriceEditor, setShowPackagePriceEditor] = useState<boolean>(false);
 
   // Kids (4–10 yrs) rate override
-  const [kidsPriceOverride, setKidsPriceOverride] = useState<number | null>(null);
+  const [kidsPriceOverride, setKidsPriceOverride] = useState<number | string | null>(null);
   const [kidsPriceOverrideReason, setKidsPriceOverrideReason] = useState<string>('');
   const [showKidsPriceEditor, setShowKidsPriceEditor] = useState<boolean>(false);
 
   // Kids under 4 yrs rate override (Default 0/Free)
-  const [kidsUnder4PriceOverride, setKidsUnder4PriceOverride] = useState<number | null>(null);
+  const [kidsUnder4PriceOverride, setKidsUnder4PriceOverride] = useState<number | string | null>(null);
   const [kidsUnder4PriceOverrideReason, setKidsUnder4PriceOverrideReason] = useState<string>('');
   const [showKidsUnder4PriceEditor, setShowKidsUnder4PriceEditor] = useState<boolean>(false);
 
@@ -141,8 +154,8 @@ export default function ManualBookingForm({
   const [selectedNonVegStarters, setSelectedNonVegStarters] = useState<string[]>([]);
   const [selectedVegMains, setSelectedVegMains] = useState<string[]>([]);
   const [selectedNonVegMains, setSelectedNonVegMains] = useState<string[]>([]);
-  const [selectedSundries, setSelectedSundries] = useState<string[]>(['Assorted Naan Plain/ Butter', 'Rice - Plain, Pulao, Jeera']);
-  const [selectedDesserts, setSelectedDesserts] = useState<string[]>(['Gulab Jamun']);
+  const [selectedSundries, setSelectedSundries] = useState<string[]>([]);
+  const [selectedDesserts, setSelectedDesserts] = useState<string[]>([]);
 
   // Selected Live Counters & Extras (with price overrides)
   const [selectedLiveCounters, setSelectedLiveCounters] = useState<{
@@ -243,31 +256,34 @@ export default function ManualBookingForm({
       const lower = k.ageRange.toLowerCase();
       return !lower.includes('under') && !lower.includes('0-2') && !lower.includes('0-4') && !k.price.toLowerCase().includes('free');
     });
-    return found ? parseInt(found.price.replace(/[^0-9]/g, '')) || 20 : 20;
+    if (!found) return 20;
+    const matchNum = found.price.match(/\d+(\.\d+)?/);
+    const parsed = matchNum ? parseFloat(matchNum[0]) : 20;
+    return parsed > 0 && parsed <= 500 ? parsed : 20;
   }, [kidsPricing]);
 
   // Base Package rate per head
-  const defaultPackagePricePerPerson = selectedPackageId === 'custom' ? selectedPackageCustomPrice : currentPackage?.pricePerPerson || 35;
+  const defaultPackagePricePerPerson = selectedPackageId === 'custom' ? Number(selectedPackageCustomPrice || 0) : currentPackage?.pricePerPerson || 35;
 
   // ── Effective Prices (with custom overrides if set) ──
-  const effectivePackagePrice = packagePriceOverride !== null ? packagePriceOverride : defaultPackagePricePerPerson;
-  const effectiveKidsPrice = kidsPriceOverride !== null ? kidsPriceOverride : defaultKidsPrice;
-  const effectiveKidsUnder4Price = kidsUnder4PriceOverride !== null ? kidsUnder4PriceOverride : 0;
+  const effectivePackagePrice = (packagePriceOverride !== null && packagePriceOverride !== '') ? Number(packagePriceOverride) : defaultPackagePricePerPerson;
+  const effectiveKidsPrice = (kidsPriceOverride !== null && kidsPriceOverride !== '') ? Number(kidsPriceOverride) : defaultKidsPrice;
+  const effectiveKidsUnder4Price = (kidsUnder4PriceOverride !== null && kidsUnder4PriceOverride !== '') ? Number(kidsUnder4PriceOverride) : 0;
 
   // Food calculations
-  const adultFoodTotal = customerDetails.adults * effectivePackagePrice;
-  const kidsFoodTotal = customerDetails.kids4to10 * effectiveKidsPrice;
-  const kidsUnder4FoodTotal = customerDetails.kidsUnder4 * effectiveKidsUnder4Price;
+  const adultFoodTotal = Number(customerDetails.adults || 0) * effectivePackagePrice;
+  const kidsFoodTotal = Number(customerDetails.kids4to10 || 0) * effectiveKidsPrice;
+  const kidsUnder4FoodTotal = Number(customerDetails.kidsUnder4 || 0) * effectiveKidsUnder4Price;
   const foodBaseAmount = adultFoodTotal + kidsFoodTotal + kidsUnder4FoodTotal;
 
   // Live counters, extras, and hall totals
-  const liveCountersTotal = selectedLiveCounters.reduce((acc, item) => acc + item.price, 0);
-  const extrasTotal = selectedExtras.reduce((acc, item) => acc + item.price, 0);
-  const hallTotal = selectedHallOption ? selectedHallOption.amount : 0;
+  const liveCountersTotal = selectedLiveCounters.reduce((acc, item) => acc + Number(item.price || 0), 0);
+  const extrasTotal = selectedExtras.reduce((acc, item) => acc + Number(item.price || 0), 0);
+  const hallTotal = selectedHallOption ? Number(selectedHallOption.amount || 0) : 0;
   const subtotalBeforeExtras = foodBaseAmount + hallTotal + liveCountersTotal + extrasTotal;
 
   // Extra charges total
-  const extraChargesTotal = bookingExtraCharges.reduce((acc, item) => acc + item.amount, 0);
+  const extraChargesTotal = bookingExtraCharges.reduce((acc, item) => acc + Number(item.amount || 0), 0);
 
   // Discount Amount
   const discountAmount = useMemo(() => {
@@ -301,29 +317,29 @@ export default function ManualBookingForm({
   // ── Active Price Overrides List for Audit & Transparency ──
   const activePriceOverridesList = useMemo(() => {
     const list: { title: string; original: number; custom: number; reason: string; category: string }[] = [];
-    if (packagePriceOverride !== null && packagePriceOverride !== defaultPackagePricePerPerson) {
+    if (packagePriceOverride !== null && packagePriceOverride !== '' && Number(packagePriceOverride) !== defaultPackagePricePerPerson) {
       list.push({
         title: `Package Rate (${currentPackage?.name || 'Package'})`,
         original: defaultPackagePricePerPerson,
-        custom: packagePriceOverride,
+        custom: Number(packagePriceOverride),
         reason: packagePriceOverrideReason.trim() || 'Custom rate override',
         category: 'Package / Adult',
       });
     }
-    if (kidsPriceOverride !== null && kidsPriceOverride !== defaultKidsPrice) {
+    if (kidsPriceOverride !== null && kidsPriceOverride !== '' && Number(kidsPriceOverride) !== defaultKidsPrice) {
       list.push({
         title: 'Kids Rate (4–10 yrs)',
         original: defaultKidsPrice,
-        custom: kidsPriceOverride,
+        custom: Number(kidsPriceOverride),
         reason: kidsPriceOverrideReason.trim() || 'Custom kids rate',
         category: 'Kids Rate',
       });
     }
-    if (kidsUnder4PriceOverride !== null && kidsUnder4PriceOverride !== 0) {
+    if (kidsUnder4PriceOverride !== null && kidsUnder4PriceOverride !== '' && Number(kidsUnder4PriceOverride) !== 0) {
       list.push({
         title: 'Infants Rate (Under 4 yrs)',
         original: 0,
-        custom: kidsUnder4PriceOverride,
+        custom: Number(kidsUnder4PriceOverride),
         reason: kidsUnder4PriceOverrideReason.trim() || 'Custom infant fee',
         category: 'Infants Rate',
       });
@@ -332,7 +348,7 @@ export default function ManualBookingForm({
       list.push({
         title: `Hall Hire (${selectedHallOption.label})`,
         original: selectedHallOption.defaultAmount,
-        custom: selectedHallOption.amount,
+        custom: Number(selectedHallOption.amount || 0),
         reason: selectedHallOption.reason || 'Custom hall hire fee',
         category: 'Venue Hall Hire',
       });
@@ -342,7 +358,7 @@ export default function ManualBookingForm({
         list.push({
           title: `Live Counter: ${lc.name}`,
           original: lc.defaultPrice,
-          custom: lc.price,
+          custom: Number(lc.price || 0),
           reason: lc.reason || 'Custom live counter price',
           category: 'Live Counters',
         });
@@ -353,7 +369,7 @@ export default function ManualBookingForm({
         list.push({
           title: `Event Extra: ${ex.name}`,
           original: ex.defaultPrice,
-          custom: ex.price,
+          custom: Number(ex.price || 0),
           reason: ex.reason || 'Custom extra charge',
           category: 'Event Extras',
         });
@@ -363,8 +379,8 @@ export default function ManualBookingForm({
       if (ec.isCustomAmount || (ec.isPreset && ec.reason)) {
         list.push({
           title: ec.label,
-          original: ec.defaultAmount ?? ec.amount,
-          custom: ec.amount,
+          original: ec.defaultAmount ?? Number(ec.amount || 0),
+          custom: Number(ec.amount || 0),
           reason: ec.reason || 'Custom surcharge / fee',
           category: 'Extra Charges / Delivery',
         });
@@ -830,8 +846,8 @@ export default function ManualBookingForm({
     setSelectedNonVegMains([]);
     setSelectedLiveCounters([]);
     setSelectedExtras([]);
-    setSelectedSundries(['Assorted Naan Plain/ Butter', 'Rice - Plain, Pulao, Jeera']);
-    setSelectedDesserts(['Gulab Jamun']);
+    setSelectedSundries([]);
+    setSelectedDesserts([]);
     setSelectedHallOption(null);
     setShowHallPriceEditor(false);
     setBookingExtraCharges([]);
@@ -1114,7 +1130,7 @@ export default function ManualBookingForm({
                   min={1}
                   required
                   value={customerDetails.adults}
-                  onChange={(e) => setCustomerDetails({ ...customerDetails, adults: Math.max(0, parseInt(e.target.value) || 0) })}
+                  onChange={(e) => setCustomerDetails({ ...customerDetails, adults: e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0) })}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 font-bold text-gray-900"
                 />
                 <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1">
@@ -1150,7 +1166,7 @@ export default function ManualBookingForm({
                           type="number"
                           min={0}
                           value={packagePriceOverride !== null ? packagePriceOverride : defaultPackagePricePerPerson}
-                          onChange={(e) => setPackagePriceOverride(parseFloat(e.target.value) || 0)}
+                          onChange={(e) => setPackagePriceOverride(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
                           placeholder="Rate per adult"
                           className="w-full pl-6 pr-2 py-1.5 border border-amber-300 rounded-lg text-xs font-bold text-gray-900 bg-white"
                         />
@@ -1189,7 +1205,7 @@ export default function ManualBookingForm({
                   type="number"
                   min={0}
                   value={customerDetails.kids4to10}
-                  onChange={(e) => setCustomerDetails({ ...customerDetails, kids4to10: Math.max(0, parseInt(e.target.value) || 0) })}
+                  onChange={(e) => setCustomerDetails({ ...customerDetails, kids4to10: e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0) })}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 font-bold text-gray-900"
                 />
                 <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1">
@@ -1225,7 +1241,7 @@ export default function ManualBookingForm({
                           type="number"
                           min={0}
                           value={kidsPriceOverride !== null ? kidsPriceOverride : defaultKidsPrice}
-                          onChange={(e) => setKidsPriceOverride(parseFloat(e.target.value) || 0)}
+                          onChange={(e) => setKidsPriceOverride(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
                           placeholder="Rate per kid"
                           className="w-full pl-6 pr-2 py-1.5 border border-amber-300 rounded-lg text-xs font-bold text-gray-900 bg-white"
                         />
@@ -1264,7 +1280,7 @@ export default function ManualBookingForm({
                   type="number"
                   min={0}
                   value={customerDetails.kidsUnder4}
-                  onChange={(e) => setCustomerDetails({ ...customerDetails, kidsUnder4: Math.max(0, parseInt(e.target.value) || 0) })}
+                  onChange={(e) => setCustomerDetails({ ...customerDetails, kidsUnder4: e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0) })}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 font-bold text-gray-900"
                 />
                 <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1">
@@ -1299,7 +1315,7 @@ export default function ManualBookingForm({
                           type="number"
                           min={0}
                           value={kidsUnder4PriceOverride !== null ? kidsUnder4PriceOverride : 0}
-                          onChange={(e) => setKidsUnder4PriceOverride(parseFloat(e.target.value) || 0)}
+                          onChange={(e) => setKidsUnder4PriceOverride(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
                           placeholder="Rate per infant"
                           className="w-full pl-6 pr-2 py-1.5 border border-amber-300 rounded-lg text-xs font-bold text-gray-900 bg-white"
                         />
@@ -1438,7 +1454,7 @@ export default function ManualBookingForm({
                           type="number"
                           min={0}
                           value={packagePriceOverride !== null ? packagePriceOverride : defaultPackagePricePerPerson}
-                          onChange={(e) => setPackagePriceOverride(parseFloat(e.target.value) || 0)}
+                          onChange={(e) => setPackagePriceOverride(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
                           placeholder="e.g. 20"
                           className="w-full pl-8 pr-3 py-2 border border-amber-300 rounded-xl text-sm font-bold text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
                         />
@@ -1572,7 +1588,7 @@ export default function ManualBookingForm({
                         type="number"
                         min={0}
                         value={selectedPackageCustomPrice}
-                        onChange={(e) => setSelectedPackageCustomPrice(parseFloat(e.target.value) || 0)}
+                        onChange={(e) => setSelectedPackageCustomPrice(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
                         onClick={(e) => e.stopPropagation()}
                         className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-bold text-gray-900 bg-white"
                       />
@@ -1982,9 +1998,10 @@ export default function ManualBookingForm({
                                   min={0}
                                   value={found.price}
                                   onChange={(e) => {
-                                    const newP = parseFloat(e.target.value) || 0;
+                                    const val = e.target.value;
+                                    const newP = val === '' ? '' : (parseFloat(val) >= 0 ? parseFloat(val) : 0);
                                     setSelectedLiveCounters((prev) =>
-                                      prev.map((l) => (l.name === item.name ? { ...l, price: newP, isCustomPrice: true } : l))
+                                      prev.map((l) => (l.name === item.name ? { ...l, price: newP as any, isCustomPrice: true } : l))
                                     );
                                   }}
                                   className="w-full px-2 py-1 border border-amber-300 rounded-lg bg-white font-bold text-xs"
@@ -2058,9 +2075,10 @@ export default function ManualBookingForm({
                                   min={0}
                                   value={found.price}
                                   onChange={(e) => {
-                                    const newP = parseFloat(e.target.value) || 0;
+                                    const val = e.target.value;
+                                    const newP = val === '' ? '' : (parseFloat(val) >= 0 ? parseFloat(val) : 0);
                                     setSelectedLiveCounters((prev) =>
-                                      prev.map((l) => (l.name === item.name ? { ...l, price: newP, isCustomPrice: true } : l))
+                                      prev.map((l) => (l.name === item.name ? { ...l, price: newP as any, isCustomPrice: true } : l))
                                     );
                                   }}
                                   className="w-full px-2 py-1 border border-amber-300 rounded-lg bg-white font-bold text-xs"
@@ -2137,9 +2155,10 @@ export default function ManualBookingForm({
                                   min={0}
                                   value={found.price}
                                   onChange={(e) => {
-                                    const newP = parseFloat(e.target.value) || 0;
+                                    const val = e.target.value;
+                                    const newP = val === '' ? '' : (parseFloat(val) >= 0 ? parseFloat(val) : 0);
                                     setSelectedExtras((prev) =>
-                                      prev.map((ex) => (ex.name === item.name ? { ...ex, price: newP, isCustomPrice: true } : ex))
+                                      prev.map((ex) => (ex.name === item.name ? { ...ex, price: newP as any, isCustomPrice: true } : ex))
                                     );
                                   }}
                                   className="w-full px-2 py-1 border border-purple-300 rounded-lg bg-white font-bold text-xs"
@@ -2270,10 +2289,11 @@ export default function ManualBookingForm({
                                   min={0}
                                   value={selectedHallOption.amount}
                                   onChange={(e) => {
-                                    const newAmt = parseFloat(e.target.value) || 0;
+                                    const val = e.target.value;
+                                    const newAmt = val === '' ? '' : (parseFloat(val) >= 0 ? parseFloat(val) : 0);
                                     setSelectedHallOption({
                                       ...selectedHallOption,
-                                      amount: newAmt,
+                                      amount: newAmt as any,
                                       isCustomAmount: true,
                                     });
                                   }}
@@ -2663,9 +2683,10 @@ export default function ManualBookingForm({
                                   min={0}
                                   value={found.amount}
                                   onChange={(e) => {
-                                    const newA = parseFloat(e.target.value) || 0;
+                                    const val = e.target.value;
+                                    const newA = val === '' ? '' : (parseFloat(val) >= 0 ? parseFloat(val) : 0);
                                     setBookingExtraCharges((prev) =>
-                                      prev.map((c) => (c.label === charge.label ? { ...c, amount: newA, isCustomAmount: true } : c))
+                                      prev.map((c) => (c.label === charge.label ? { ...c, amount: newA as any, isCustomAmount: true } : c))
                                     );
                                   }}
                                   className="w-full px-2 py-1 border border-amber-300 rounded-lg bg-white font-bold text-xs"
