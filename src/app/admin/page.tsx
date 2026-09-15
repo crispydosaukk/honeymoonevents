@@ -626,7 +626,8 @@ export default function AdminPage() {
     depositAmount: 500,
     minimumBookingHours: 4,
     weekdayRate: 350,
-    weekendRate: 550
+    weekendRate: 550,
+    minimumGuests: 30,
   });
 
   useEffect(() => {
@@ -639,7 +640,8 @@ export default function AdminPage() {
           depositAmount: dep,
           minimumBookingHours: data.minimumBookingHours || 4,
           weekdayRate: data.weekdayRate || 350,
-          weekendRate: data.weekendRate || 550
+          weekendRate: data.weekendRate || 550,
+          minimumGuests: data.minimumGuests !== undefined ? data.minimumGuests : 30,
         });
       }
     });

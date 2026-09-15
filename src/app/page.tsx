@@ -63,6 +63,7 @@ export default function HomePage() {
 
   const [pricingDetails, setPricingDetails] = useState({
     depositPercentage: 30,
+    minimumGuests: 30,
   });
 
   React.useEffect(() => {
