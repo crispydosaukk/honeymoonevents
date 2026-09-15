@@ -12,7 +12,7 @@ import ManualBookingForm from '@/components/admin/ManualBookingForm';
 import ExtraChargesSettings, { ConfiguredExtraCharge, DEFAULT_CONFIGURED_CHARGES } from '@/components/admin/ExtraChargesSettings';
 import { generateChefMenuPDF, openChefWhatsApp } from '@/utils/chefMenuPDF';
 
-// ─── TYPES ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ TYPES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type BookingStatus =
   | 'new_enquiry' | 'menu_sent' | 'menu_selected' | 'deposit_pending' | 'deposit_confirmed' | 'event_scheduled' | 'event_completed' | 'final_invoice_sent' | 'final_payment_received' | 'completed';
@@ -96,7 +96,7 @@ interface Customer {
   status: 'active' | 'inactive';
 }
 
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ CONSTANTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const STATUS_FLOW: BookingStatus[] = [
   'new_enquiry',
@@ -161,7 +161,7 @@ const MENU_PACKAGES = [
     name: 'Premium Plated',
     price: 62,
     tag: 'Best Value',
-    items: ['Soup or Salad', 'Choice of Entrée (Beef/Fish/Veg)', 'Sides', 'Bread Service', 'Plated Dessert', 'Coffee & Tea'],
+    items: ['Soup or Salad', 'Choice of EntrÃ©e (Beef/Fish/Veg)', 'Sides', 'Bread Service', 'Plated Dessert', 'Coffee & Tea'],
   },
   {
     name: 'Cocktail Reception',
@@ -181,7 +181,7 @@ const SAMPLE_BOOKINGS: Booking[] = [
   {
     id: 'BK001', name: 'Sarah Johnson', email: 'sarah@email.com', phone: '+447700900101',
     eventType: 'Wedding', date: '2026-06-15', time: '4:00 PM', guests: 200,
-    status: 'deposit_confirmed', notes: 'Floral décor, DJ required. Bride prefers white roses.',
+    status: 'deposit_confirmed', notes: 'Floral dÃ©cor, DJ required. Bride prefers white roses.',
     baseAmount: 12500, deposit: 3750, depositPaid: true, finalPaymentPaid: false,
     package: 'Premium Plated', selectedMenu: 'Premium Plated', extraCharges: [],
     paymentProofDeposit: 'proof_attached', enquiryDate: '2026-04-10',
@@ -286,7 +286,7 @@ function buildWhatsAppLink(phone: string, message: string) {
 
 type AdminTab = 'overview' | 'enquiries' | 'bookings' | 'manual_booking' | 'calendar' | 'customers' | 'payments' | 'menus' | 'history' | 'settings' | 'access' | 'discount_approvals' | 'tracker';
 
-// ─── COMPONENT ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ COMPONENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function AdminPage() {
   const openImagePreview = (imgUrl?: string, title: string = 'Payment Proof') => {
@@ -359,7 +359,7 @@ export default function AdminPage() {
       <body>
         <div class="nav">
           <span class="title">${title}</span>
-          <button class="btn" onclick="if(window.opener){window.close();}else{history.back();}">✕ Close / Go Back</button>
+          <button class="btn" onclick="if(window.opener){window.close();}else{history.back();}">âœ• Close / Go Back</button>
         </div>
         <div class="img-container">
           <img src="${imgUrl}" alt="${title}"/>
@@ -496,7 +496,7 @@ export default function AdminPage() {
               if (roleDoc.exists()) {
                 roleName = roleDoc.data().name || 'Staff';
                 const rolePermIds: string[] = roleDoc.data().permissionIds || [];
-                // Resolve permission IDs → title strings for sidebar filtering
+                // Resolve permission IDs â†’ title strings for sidebar filtering
                 const permTitles: string[] = [];
                 for (const permId of rolePermIds) {
                   const permDoc = await getDoc(doc(db, 'permissions', permId));
@@ -513,7 +513,7 @@ export default function AdminPage() {
             }
             setCurrentUser({ name: userData.name || 'User', email: userData.email || user.email || '', role: roleName });
           } else {
-            // No user doc found → original super admin (honeymoonadmin)
+            // No user doc found â†’ original super admin (honeymoonadmin)
             setCurrentUser({ name: 'Admin', email: user.email || '', role: 'Super Admin' });
             setUserPermissions('all');
           }
@@ -647,7 +647,7 @@ export default function AdminPage() {
     });
   }, []);
 
-  // ─── REAL MENU EDITABLE STATE ─────────────────────────────────────────────
+  // â”€â”€â”€ REAL MENU EDITABLE STATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   type AdminMenuTab = 'banquet' | 'indian' | 'srilankan' | 'live';
   const [adminMenuTab, setAdminMenuTab] = useState<AdminMenuTab>('banquet');
 
@@ -795,34 +795,34 @@ export default function AdminPage() {
   const buildMenuWhatsAppText = (customerName: string, customerPhone: string, menuType: string, guestCount: number) => {
     let text = `Hi ${customerName}, here are our *${menuType}* options from Honeymoon:\n\n`;
     if (menuType === 'Indian Menu') {
-      text += `🥗 *Vegetarian Starters:*\n${(editableIndianMenu.vegStarters || []).map(i => `• ${i}`).join('\n')}\n\n`;
-      text += `🍗 *Non-Veg Starters:*\n${(editableIndianMenu.nonVegStarters || []).map(i => `• ${i}`).join('\n')}\n\n`;
-      text += `🍛 *Vegetarian Mains:*\n${(editableIndianMenu.vegMains || []).map(i => `• ${i}`).join('\n')}\n\n`;
-      text += `🍖 *Non-Veg Mains:*\n${(editableIndianMenu.nonVegMains || []).map(i => `• ${i}`).join('\n')}\n\n`;
-      text += `🍮 *Desserts:*\n${(editableIndianMenu.desserts || []).map(i => `• ${i}`).join('\n')}\n\n`;
+      text += `ðŸ¥— *Vegetarian Starters:*\n${(editableIndianMenu.vegStarters || []).map(i => `â€¢ ${i}`).join('\n')}\n\n`;
+      text += `ðŸ— *Non-Veg Starters:*\n${(editableIndianMenu.nonVegStarters || []).map(i => `â€¢ ${i}`).join('\n')}\n\n`;
+      text += `ðŸ› *Vegetarian Mains:*\n${(editableIndianMenu.vegMains || []).map(i => `â€¢ ${i}`).join('\n')}\n\n`;
+      text += `ðŸ– *Non-Veg Mains:*\n${(editableIndianMenu.nonVegMains || []).map(i => `â€¢ ${i}`).join('\n')}\n\n`;
+      text += `ðŸ® *Desserts:*\n${(editableIndianMenu.desserts || []).map(i => `â€¢ ${i}`).join('\n')}\n\n`;
     } else if (menuType === 'Sri Lankan Menu') {
-      text += `🥗 *Vegetarian Starters:*\n${(editableSLMenu.vegStarters || []).map(i => `• ${i}`).join('\n')}\n\n`;
-      text += `🍗 *Non-Veg Starters:*\n${(editableSLMenu.nonVegStarters || []).map(i => `• ${i}`).join('\n')}\n\n`;
-      text += `🍛 *Vegetarian Mains:*\n${(editableSLMenu.vegMains || []).map(i => `• ${i}`).join('\n')}\n\n`;
-      text += `🍖 *Non-Veg Mains:*\n${(editableSLMenu.nonVegMains || []).map(i => `• ${i}`).join('\n')}\n\n`;
-      text += `🍮 *Desserts:*\n${(editableSLMenu.desserts || []).map(i => `• ${i}`).join('\n')}\n\n`;
+      text += `ðŸ¥— *Vegetarian Starters:*\n${(editableSLMenu.vegStarters || []).map(i => `â€¢ ${i}`).join('\n')}\n\n`;
+      text += `ðŸ— *Non-Veg Starters:*\n${(editableSLMenu.nonVegStarters || []).map(i => `â€¢ ${i}`).join('\n')}\n\n`;
+      text += `ðŸ› *Vegetarian Mains:*\n${(editableSLMenu.vegMains || []).map(i => `â€¢ ${i}`).join('\n')}\n\n`;
+      text += `ðŸ– *Non-Veg Mains:*\n${(editableSLMenu.nonVegMains || []).map(i => `â€¢ ${i}`).join('\n')}\n\n`;
+      text += `ðŸ® *Desserts:*\n${(editableSLMenu.desserts || []).map(i => `â€¢ ${i}`).join('\n')}\n\n`;
     } else if (menuType === 'Venue Hall Charges') {
-      text += editableVenueCharges.map(row => `• *${row.day}:* ${row.charge} ${row.note ? `(${row.note})` : ''}`).join('\n') + '\n\n';
-      text += `🍷 *ALCOHOL:*\nCorkage fee - Charges for outside Alcohol in Venue which will be discussed as per guests.\n\n`;
+      text += editableVenueCharges.map(row => `â€¢ *${row.day}:* ${row.charge} ${row.note ? `(${row.note})` : ''}`).join('\n') + '\n\n';
+      text += `ðŸ· *ALCOHOL:*\nCorkage fee - Charges for outside Alcohol in Venue which will be discussed as per guests.\n\n`;
     } else if (menuType === 'Dry Hire') {
-      text += editableDryHirePrices.map(row => `• *${row.day} (${row.session}):* £${row.price}`).join('\n') + '\n\n';
+      text += editableDryHirePrices.map(row => `â€¢ *${row.day} (${row.session}):* Â£${row.price}`).join('\n') + '\n\n';
     } else if (menuType === 'Kids Pricing') {
       text += `(Only Applies for over 50 Adults)\n\n`;
-      text += editableKidsPricing.map(kp => `• *${kp.ageRange}:* ${kp.price}`).join('\n') + '\n\n';
+      text += editableKidsPricing.map(kp => `â€¢ *${kp.ageRange}:* ${kp.price}`).join('\n') + '\n\n';
       text += `*NOTE:* Minimum Number of Guests will be charged as agreed. As per our policy and food safety, we don't allow any food takeaway from Banquet Venue.\n\n`;
     } else if (menuType === 'Extras') {
-      text += (editableLiveCounter.extras || []).map(e => `• *${e.name}:* £${e.price}`).join('\n') + '\n\n';
+      text += (editableLiveCounter.extras || []).map(e => `â€¢ *${e.name}:* Â£${e.price}`).join('\n') + '\n\n';
     }
     
     if (menuType.includes('Menu') || menuType === 'Extras') {
-      text += `Please reply with your preferred selections. We look forward to serving you! 🙏`;
+      text += `Please reply with your preferred selections. We look forward to serving you! ðŸ™`;
     } else {
-      text += `Please let us know if you have any questions or would like to proceed with booking! 🙏`;
+      text += `Please let us know if you have any questions or would like to proceed with booking! ðŸ™`;
     }
     return buildWhatsAppLink(customerPhone, text);
   };
@@ -835,15 +835,15 @@ export default function AdminPage() {
 
     let discountText = '';
     if (booking.discount) {
-      discountText = `\n• Discount (${booking.discount.reason}): -£${getDiscountAmount(booking).toLocaleString()}`;
+      discountText = `\nâ€¢ Discount (${booking.discount.reason}): -Â£${getDiscountAmount(booking).toLocaleString()}`;
     }
 
     const hallCharge = getVenueHallCharge(booking.date, booking.time);
-    const hallText = hallCharge ? `\n• ${hallCharge.label}: £${hallCharge.amount.toLocaleString()}` : '';
+    const hallText = hallCharge ? `\nâ€¢ ${hallCharge.label}: Â£${hallCharge.amount.toLocaleString()}` : '';
 
     let extrasText = '';
     if (extraChargesTotal > 0) {
-      extrasText = '\n\n*➕ Additional Adjustments:*\n' + booking.extraCharges.map(c => `• ${c.label}: +£${c.amount.toLocaleString()}`).join('\n');
+      extrasText = '\n\n*âž• Additional Adjustments:*\n' + booking.extraCharges.map(c => `â€¢ ${c.label}: +Â£${c.amount.toLocaleString()}`).join('\n');
     }
 
     const adults = booking.adults ?? booking.guests;
@@ -851,49 +851,49 @@ export default function AdminPage() {
     const kidsUnder4 = booking.kidsUnder4 || 0;
     const kidsPrice = getKidsPrice(editableKidsPricing);
 
-    const guestBreakdown = `• Adults: ${adults} × £${editableBanquetPackages.find(p => p.name === (booking.selectedMenu || booking.package))?.pricePerPerson || 0}/person\n• Kids (4-10 yrs): ${kids4to10} × £${kidsPrice}/person\n• Kids (0-4 yrs): ${kidsUnder4} × Free`;
+    const guestBreakdown = `â€¢ Adults: ${adults} Ã— Â£${editableBanquetPackages.find(p => p.name === (booking.selectedMenu || booking.package))?.pricePerPerson || 0}/person\nâ€¢ Kids (4-10 yrs): ${kids4to10} Ã— Â£${kidsPrice}/person\nâ€¢ Kids (0-4 yrs): ${kidsUnder4} Ã— Free`;
 
     return `Hi ${booking.name.split(' ')[0]},
 
-Thank you so much for booking with Honeymoon Events! 🎊 Your event was a success and your booking is now fully completed.
+Thank you so much for booking with Honeymoon Events! ðŸŽŠ Your event was a success and your booking is now fully completed.
 
-*📝 Event Summary:*
-• Event: ${booking.eventType}
-• Date: ${booking.date}
-• Package: ${booking.selectedMenu || booking.package}
+*ðŸ“ Event Summary:*
+â€¢ Event: ${booking.eventType}
+â€¢ Date: ${booking.date}
+â€¢ Package: ${booking.selectedMenu || booking.package}
 
-*👥 Guest Breakdown:*
+*ðŸ‘¥ Guest Breakdown:*
 ${guestBreakdown}
-• Total Guests: ${adults + kids4to10 + kidsUnder4}${extrasText}
+â€¢ Total Guests: ${adults + kids4to10 + kidsUnder4}${extrasText}
 
-*💰 Final Invoice Details:*
-• Base Amount: £${booking.baseAmount.toLocaleString()}${discountText}${hallText}
-• Grand Total: £${total}
+*ðŸ’° Final Invoice Details:*
+â€¢ Base Amount: Â£${booking.baseAmount.toLocaleString()}${discountText}${hallText}
+â€¢ Grand Total: Â£${total}
 
-*💳 Payments Received:*
-• Deposit: £${deposit}
-• Main Balance Paid: £${finalPaymentPaidAmt.toLocaleString()}
-${extraChargesTotal > 0 ? `• Extra Charges Paid: £${extraChargesTotal.toLocaleString()}\n` : ''}
-• Status: *Paid in Full ✅*
+*ðŸ’³ Payments Received:*
+â€¢ Deposit: Â£${deposit}
+â€¢ Main Balance Paid: Â£${finalPaymentPaidAmt.toLocaleString()}
+${extraChargesTotal > 0 ? `â€¢ Extra Charges Paid: Â£${extraChargesTotal.toLocaleString()}\n` : ''}
+â€¢ Status: *Paid in Full âœ…*
 
-It was an absolute pleasure serving you. We hope you and your guests had a wonderful time! We'd love to host your future events. 🙏✨`;
+It was an absolute pleasure serving you. We hope you and your guests had a wonderful time! We'd love to host your future events. ðŸ™âœ¨`;
   };
 
   const buildFinalInvoiceWhatsAppText = (booking: Booking, bank: typeof bankDetails) => {
     let extrasText = '';
     if (booking.extraCharges && booking.extraCharges.length > 0) {
-      extrasText = '\n\n*➕ Additional Adjustments:*\n' + booking.extraCharges.map(c => `• ${c.label}: £${c.amount.toLocaleString()}`).join('\n');
+      extrasText = '\n\n*âž• Additional Adjustments:*\n' + booking.extraCharges.map(c => `â€¢ ${c.label}: Â£${c.amount.toLocaleString()}`).join('\n');
     }
 
     let discountText = '';
     if (booking.discount) {
-      discountText = `\n\n*🏷️ Discount (${booking.discount.reason}):* -£${getDiscountAmount(booking).toLocaleString()}`;
+      discountText = `\n\n*ðŸ·ï¸ Discount (${booking.discount.reason}):* -Â£${getDiscountAmount(booking).toLocaleString()}`;
     }
 
     const hallCharge = getVenueHallCharge(booking.date, booking.time);
-    const hallText = hallCharge ? `\n\n*🏛️ ${hallCharge.label}:* £${hallCharge.amount.toLocaleString()}` : '';
+    const hallText = hallCharge ? `\n\n*ðŸ›ï¸ ${hallCharge.label}:* Â£${hallCharge.amount.toLocaleString()}` : '';
 
-    const dueDateText = booking.dueDate ? `\n\n*⏰ Payment Due By:* ${booking.dueDate}` : '';
+    const dueDateText = booking.dueDate ? `\n\n*â° Payment Due By:* ${booking.dueDate}` : '';
 
     const adults = booking.adults ?? booking.guests;
     const kids4to10 = booking.kids4to10 || 0;
@@ -901,7 +901,7 @@ It was an absolute pleasure serving you. We hope you and your guests had a wonde
     const kidsPrice = getKidsPrice(editableKidsPricing);
     const pricePerPerson = editableBanquetPackages.find(p => p.name === (booking.selectedMenu || booking.package))?.pricePerPerson || 0;
 
-    const guestBreakdown = `*👥 Guest Breakdown:*\n• Adults: ${adults} × £${pricePerPerson}/person = £${(adults * pricePerPerson).toLocaleString()}\n• Kids (4-10 yrs): ${kids4to10} × £${kidsPrice}/person = £${(kids4to10 * kidsPrice).toLocaleString()}\n• Kids (0-4 yrs): ${kidsUnder4} × Free = £0\n• Total Guests: ${adults + kids4to10 + kidsUnder4}`;
+    const guestBreakdown = `*ðŸ‘¥ Guest Breakdown:*\nâ€¢ Adults: ${adults} Ã— Â£${pricePerPerson}/person = Â£${(adults * pricePerPerson).toLocaleString()}\nâ€¢ Kids (4-10 yrs): ${kids4to10} Ã— Â£${kidsPrice}/person = Â£${(kids4to10 * kidsPrice).toLocaleString()}\nâ€¢ Kids (0-4 yrs): ${kidsUnder4} Ã— Free = Â£0\nâ€¢ Total Guests: ${adults + kids4to10 + kidsUnder4}`;
 
     const grandTotal = getTotalAmount(booking);
     const extraChargesTotal = (booking.extraCharges || []).reduce((s, c) => s + c.amount, 0);
@@ -917,37 +917,37 @@ It was an absolute pleasure serving you. We hope you and your guests had a wonde
                       
     const remainingBalance = grandTotal - totalPaid;
     
-    const breakdownText = `*💳 Payment Breakdown:*\n` +
-      `• Deposit Paid: £${booking.deposit.toLocaleString()} (${isDepositPaid ? (booking.paymentMethodDeposit ? `Paid via ${booking.paymentMethodDeposit.replace('Paid by ', '')}` : 'Paid') : 'Pending'})\n` +
-      `• Final Payment (Main Balance): £${finalPaymentPaidAmt.toLocaleString()} (${isFinalPaid ? (booking.paymentMethodFinal ? `Paid via ${booking.paymentMethodFinal.replace('Paid by ', '')}` : 'Paid') : 'Pending'})\n` +
-      (extraChargesTotal > 0 ? `• Extras / Adjustments: £${extraChargesTotal.toLocaleString()} (${isExtraPaid ? 'Paid' : 'Pending'})\n` : '') +
-      `• Total Paid: £${totalPaid.toLocaleString()}\n` +
-      `• *Remaining Balance Due: ${remainingBalance <= 0 ? 'PAID IN FULL ✓' : `£${remainingBalance.toLocaleString()}`}*`;
+    const breakdownText = `*ðŸ’³ Payment Breakdown:*\n` +
+      `â€¢ Deposit Paid: Â£${booking.deposit.toLocaleString()} (${isDepositPaid ? (booking.paymentMethodDeposit ? `Paid via ${booking.paymentMethodDeposit.replace('Paid by ', '')}` : 'Paid') : 'Pending'})\n` +
+      `â€¢ Final Payment (Main Balance): Â£${finalPaymentPaidAmt.toLocaleString()} (${isFinalPaid ? (booking.paymentMethodFinal ? `Paid via ${booking.paymentMethodFinal.replace('Paid by ', '')}` : 'Paid') : 'Pending'})\n` +
+      (extraChargesTotal > 0 ? `â€¢ Extras / Adjustments: Â£${extraChargesTotal.toLocaleString()} (${isExtraPaid ? 'Paid' : 'Pending'})\n` : '') +
+      `â€¢ Total Paid: Â£${totalPaid.toLocaleString()}\n` +
+      `â€¢ *Remaining Balance Due: ${remainingBalance <= 0 ? 'PAID IN FULL âœ“' : `Â£${remainingBalance.toLocaleString()}`}*`;
 
-    return `Hi ${booking.name.split(' ')[0]}, thank you for choosing Honeymoon Events for your ${booking.eventType}! 🎉\n\nHere is your final invoice summary:\n\n*📋 Booking Ref:* ${booking.id}\n*📦 Package:* ${booking.selectedMenu || booking.package}\n\n${guestBreakdown}\n\n*💰 Base Amount:* £${booking.baseAmount.toLocaleString()}${extrasText}${discountText}${hallText}\n\n${breakdownText}${dueDateText}\n\nPlease transfer the balance to:\n🏦 Account Name: ${bank.accountName}\n📋 Sort Code: ${bank.sortCode}\n🔢 Account No: ${bank.accountNumber}\n📌 Reference: ${booking.id}\n\nOnce paid, please send a screenshot of the transfer confirmation here. Thank you!`;
+    return `Hi ${booking.name.split(' ')[0]}, thank you for choosing Honeymoon Events for your ${booking.eventType}! ðŸŽ‰\n\nHere is your final invoice summary:\n\n*ðŸ“‹ Booking Ref:* ${booking.id}\n*ðŸ“¦ Package:* ${booking.selectedMenu || booking.package}\n\n${guestBreakdown}\n\n*ðŸ’° Base Amount:* Â£${booking.baseAmount.toLocaleString()}${extrasText}${discountText}${hallText}\n\n${breakdownText}${dueDateText}\n\nPlease transfer the balance to:\nðŸ¦ Account Name: ${bank.accountName}\nðŸ“‹ Sort Code: ${bank.sortCode}\nðŸ”¢ Account No: ${bank.accountNumber}\nðŸ“Œ Reference: ${booking.id}\n\nOnce paid, please send a screenshot of the transfer confirmation here. Thank you!`;
   };
 
   const buildExtraInvoiceWhatsAppText = (booking: Booking, bank: typeof bankDetails) => {
     const nonPreset = (booking.extraCharges || []).filter(c => !c.isPreset && !(editableLiveCounter?.extras || []).some(preset => preset.name === c.label));
     const extraChargesTotal = nonPreset.reduce((sum, c) => sum + c.amount, 0);
-    const extrasList = nonPreset.map(c => `• ${c.label}: £${c.amount.toLocaleString()}`).join('\n');
+    const extrasList = nonPreset.map(c => `â€¢ ${c.label}: Â£${c.amount.toLocaleString()}`).join('\n');
 
     return `Hi ${booking.name.split(' ')[0]},
 
-Thank you for celebrating with us at Honeymoon Events! 🎉 We hope you had a fantastic time.
+Thank you for celebrating with us at Honeymoon Events! ðŸŽ‰ We hope you had a fantastic time.
 
 There were some additional adjustments/services added during your event:
 ${extrasList}
 
-*💰 Extra Balance Due: £${extraChargesTotal.toLocaleString()}*
+*ðŸ’° Extra Balance Due: Â£${extraChargesTotal.toLocaleString()}*
 
 Please transfer this outstanding balance to:
-🏦 Account Name: ${bank.accountName}
-📋 Sort Code: ${bank.sortCode}
-🔢 Account No: ${bank.accountNumber}
-📌 Reference: ${booking.id} (Extras)
+ðŸ¦ Account Name: ${bank.accountName}
+ðŸ“‹ Sort Code: ${bank.sortCode}
+ðŸ”¢ Account No: ${bank.accountNumber}
+ðŸ“Œ Reference: ${booking.id} (Extras)
 
-Once paid, please send a screenshot of the transfer confirmation here so we can finalize and close your booking. Thank you! 🙏`;
+Once paid, please send a screenshot of the transfer confirmation here so we can finalize and close your booking. Thank you! ðŸ™`;
   };
 
   const buildFinalPaymentBankWhatsAppText = (booking: Booking, bank: typeof bankDetails) => {
@@ -956,17 +956,17 @@ Once paid, please send a screenshot of the transfer confirmation here so we can 
 
     return `Hi ${booking.name.split(' ')[0]},
 
-Regarding your ${booking.eventType} booking on ${booking.date} (Booking Ref: *${booking.id}*) with Honeymoon Events 🎉:
+Regarding your ${booking.eventType} booking on ${booking.date} (Booking Ref: *${booking.id}*) with Honeymoon Events ðŸŽ‰:
 
-*💰 Final Balance Due: £${remainingBalance.toLocaleString()}*
+*ðŸ’° Final Balance Due: Â£${remainingBalance.toLocaleString()}*
 
 Please transfer this balance to our official bank account:
-🏦 *Account Name:* ${bank.accountName}
-📋 *Sort Code:* ${bank.sortCode}
-🔢 *Account Number:* ${bank.accountNumber}
-📌 *Payment Reference:* ${booking.id}
+ðŸ¦ *Account Name:* ${bank.accountName}
+ðŸ“‹ *Sort Code:* ${bank.sortCode}
+ðŸ”¢ *Account Number:* ${bank.accountNumber}
+ðŸ“Œ *Payment Reference:* ${booking.id}
 
-Once you have completed the transfer, please send us a screenshot of the payment confirmation here. After payment confirmation, your order will be officially closed and completed. Thank you! 🙏`;
+Once you have completed the transfer, please send us a screenshot of the payment confirmation here. After payment confirmation, your order will be officially closed and completed. Thank you! ðŸ™`;
   };
 
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -1599,16 +1599,16 @@ Once you have completed the transfer, please send us a screenshot of the payment
     const isDinner = timeLower.includes('dinner') || timeLower.includes('evening') || timeLower.includes('pm');
 
     if (dayOfWeek >= 1 && dayOfWeek <= 4) {
-      // Mon–Thu: £100
-      return { label: 'Venue Hall Hire (Mon–Thu)', amount: 100 };
+      // Monâ€“Thu: Â£100
+      return { label: 'Venue Hall Hire (Monâ€“Thu)', amount: 100 };
     } else if (dayOfWeek === 5) {
-      // Friday: £250
+      // Friday: Â£250
       return { label: 'Venue Hall Hire (Friday)', amount: 250 };
     } else if (dayOfWeek === 0) {
-      // Sunday: £250
+      // Sunday: Â£250
       return { label: 'Venue Hall Hire (Sunday)', amount: 250 };
     } else if (dayOfWeek === 6) {
-      // Saturday: Lunch=£250, Dinner=£500
+      // Saturday: Lunch=Â£250, Dinner=Â£500
       if (isDinner) {
         return { label: 'Venue Hall Hire (Saturday Dinner)', amount: 500 };
       } else {
@@ -1701,8 +1701,8 @@ Once you have completed the transfer, please send us a screenshot of the payment
       booking.extraCharges.forEach(extra => {
         extrasRows += `
           <tr>
-            <td>• ${extra.label}</td>
-            <td class="text-right">+£${extra.amount.toLocaleString()}</td>
+            <td>â€¢ ${extra.label}</td>
+            <td class="text-right">+Â£${extra.amount.toLocaleString()}</td>
           </tr>
         `;
       });
@@ -1897,8 +1897,8 @@ Once you have completed the transfer, please send us a screenshot of the payment
       </head>
       <body>
         <div class="no-print-bar">
-          <button class="no-print-btn" onclick="if(window.opener){window.close();}else{history.back();}" style="background:#4B5563;">✕ Close / Go Back</button>
-          <button class="no-print-btn" onclick="window.print()">🖨️ Print / Save PDF</button>
+          <button class="no-print-btn" onclick="if(window.opener){window.close();}else{history.back();}" style="background:#4B5563;">âœ• Close / Go Back</button>
+          <button class="no-print-btn" onclick="window.print()">ðŸ–¨ï¸ Print / Save PDF</button>
         </div>
           </thead>
           <tbody>
@@ -1906,17 +1906,17 @@ Once you have completed the transfer, please send us a screenshot of the payment
               <td>
                 <strong>Package: ${booking.selectedMenu || booking.package || 'Not Selected'}</strong>
                 <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                  • Adults: ${adults} × £${pricePerPerson}/person<br/>
-                  • Kids (4-10 yrs): ${kids4to10} × £${kidsPrice}/person<br/>
-                  • Kids (0-4 yrs): ${kidsUnder4} × Free
+                  â€¢ Adults: ${adults} Ã— Â£${pricePerPerson}/person<br/>
+                  â€¢ Kids (4-10 yrs): ${kids4to10} Ã— Â£${kidsPrice}/person<br/>
+                  â€¢ Kids (0-4 yrs): ${kidsUnder4} Ã— Free
                 </div>
               </td>
-              <td class="text-right" style="vertical-align: middle;">£${booking.baseAmount.toLocaleString()}</td>
+              <td class="text-right" style="vertical-align: middle;">Â£${booking.baseAmount.toLocaleString()}</td>
             </tr>
             ${hallCharge ? `
             <tr>
-              <td>🏛️ ${hallCharge.label}</td>
-              <td class="text-right">£${hallCharge.amount.toLocaleString()}</td>
+              <td>ðŸ›ï¸ ${hallCharge.label}</td>
+              <td class="text-right">Â£${hallCharge.amount.toLocaleString()}</td>
             </tr>
             ` : ''}
             ${extrasRows}
@@ -1928,17 +1928,17 @@ Once you have completed the transfer, please send us a screenshot of the payment
           <tbody>
             <tr>
               <td>Subtotal:</td>
-              <td class="text-right">£${(booking.baseAmount + (hallCharge?.amount || 0) + extraChargesTotal).toLocaleString()}</td>
+              <td class="text-right">Â£${(booking.baseAmount + (hallCharge?.amount || 0) + extraChargesTotal).toLocaleString()}</td>
             </tr>
             ${booking.discount ? `
             <tr>
               <td style="color: #d9534f;">Discount (${booking.discount.reason}):</td>
-              <td class="text-right" style="color: #d9534f;">-£${discountAmount.toLocaleString()}</td>
+              <td class="text-right" style="color: #d9534f;">-Â£${discountAmount.toLocaleString()}</td>
             </tr>
             ` : ''}
             <tr class="grand-total">
               <td>Grand Total (Incl. Hall):</td>
-              <td class="text-right">£${grandTotal.toLocaleString()}</td>
+              <td class="text-right">Â£${grandTotal.toLocaleString()}</td>
             </tr>
             
             <!-- Payment Breakdown Details -->
@@ -1949,7 +1949,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </tr>
             <tr>
               <td style="padding-top: 8px; padding-left: 10px; color: #555;">
-                • Deposit Paid:
+                â€¢ Deposit Paid:
                 ${isDepositPaid && booking.paymentMethodDeposit ? `
                   <div style="font-size: 11px; color: #666; margin-left: 10px; margin-top: 2px; font-style: italic;">
                     Paid via ${booking.paymentMethodDeposit.replace('Paid by ', '')}
@@ -1957,12 +1957,12 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 ` : ''}
               </td>
               <td class="text-right" style="padding-top: 8px; color: ${isDepositPaid ? '#2b7a4a' : '#c86a00'}; font-weight: 500;">
-                ${isDepositPaid ? `-£${booking.deposit.toLocaleString()} (Paid)` : `£${booking.deposit.toLocaleString()} (Pending)`}
+                ${isDepositPaid ? `-Â£${booking.deposit.toLocaleString()} (Paid)` : `Â£${booking.deposit.toLocaleString()} (Pending)`}
               </td>
             </tr>
             <tr>
               <td style="padding-left: 10px; color: #555;">
-                • Final Payment (Main Balance):
+                â€¢ Final Payment (Main Balance):
                 ${booking.finalPaymentPaid && booking.paymentMethodFinal ? `
                   <div style="font-size: 11px; color: #666; margin-left: 10px; margin-top: 2px; font-style: italic;">
                     Paid via ${booking.paymentMethodFinal.replace('Paid by ', '')}
@@ -1970,14 +1970,14 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 ` : ''}
               </td>
               <td class="text-right" style="color: ${booking.finalPaymentPaid ? '#2b7a4a' : '#c86a00'}; font-weight: 500;">
-                ${booking.finalPaymentPaid ? `-£${finalPaymentPaidAmt.toLocaleString()} (Paid)` : `£${finalPaymentPaidAmt.toLocaleString()} (Pending)`}
+                ${booking.finalPaymentPaid ? `-Â£${finalPaymentPaidAmt.toLocaleString()} (Paid)` : `Â£${finalPaymentPaidAmt.toLocaleString()} (Pending)`}
               </td>
             </tr>
             
             ${(booking.extraCharges || []).map(extra => `
             <tr>
               <td style="padding-left: 10px; color: #555; vertical-align: top;">
-                • ${extra.label}:
+                â€¢ ${extra.label}:
                 ${isExtraPaid && booking.paymentMethodFinal ? `
                   <div style="font-size: 11px; color: #666; margin-left: 10px; margin-top: 2px; font-style: italic;">
                     Paid via ${booking.paymentMethodFinal.replace('Paid by ', '')}
@@ -1985,7 +1985,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 ` : ''}
               </td>
               <td class="text-right" style="color: ${isExtraPaid ? '#2b7a4a' : '#c86a00'}; font-weight: 500; vertical-align: top;">
-                ${isExtraPaid ? `-£${extra.amount.toLocaleString()} (Paid)` : `£${extra.amount.toLocaleString()} (Pending)`}
+                ${isExtraPaid ? `-Â£${extra.amount.toLocaleString()} (Paid)` : `Â£${extra.amount.toLocaleString()} (Pending)`}
               </td>
             </tr>
             `).join('')}
@@ -1993,7 +1993,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             <tr style="border-top: 1px solid #ddd;">
               <td style="font-weight: bold; padding-top: 10px;">Total Paid:</td>
               <td class="text-right" style="font-weight: bold; color: #2b7a4a; padding-top: 10px;">
-                £${(
+                Â£${(
                   (isDepositPaid ? booking.deposit : 0) +
                   (booking.finalPaymentPaid ? finalPaymentPaidAmt : 0) +
                   (isExtraPaid ? extraChargesTotal : 0)
@@ -2013,7 +2013,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   (isDepositPaid ? booking.deposit : 0) +
                   (booking.finalPaymentPaid ? finalPaymentPaidAmt : 0) +
                   (isExtraPaid ? extraChargesTotal : 0)
-                )) <= 0 ? 'PAID IN FULL ✓' : `£${(grandTotal - (
+                )) <= 0 ? 'PAID IN FULL âœ“' : `Â£${(grandTotal - (
                   (isDepositPaid ? booking.deposit : 0) +
                   (booking.finalPaymentPaid ? finalPaymentPaidAmt : 0) +
                   (isExtraPaid ? extraChargesTotal : 0)
@@ -2159,7 +2159,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
     return userPermissions.includes(item.requiredPerm);
   });
 
-  // ─── AUTHENTICATION LOADING ────────────────────────────────────────────────
+  // â”€â”€â”€ AUTHENTICATION LOADING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (loadingAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #1A0F00 0%, #2C1A00 50%, #3D2800 100%)' }}>
@@ -2168,7 +2168,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
     );
   }
 
-  // ─── LOGIN ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€ LOGIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (!loggedIn) {
     return (
       <div className="min-h-screen flex items-center justify-center px-6" style={{ background: 'linear-gradient(135deg, #1A0F00 0%, #2C1A00 50%, #3D2800 100%)' }}>
@@ -2195,7 +2195,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Password</label>
               <div className="relative">
-                <input type={showPassword ? "text" : "password"} required value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full border border-gray-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none bg-gray-50" placeholder="••••••••" />
+                <input type={showPassword ? "text" : "password"} required value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full border border-gray-200 rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none bg-gray-50" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -2215,7 +2215,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
     );
   }
 
-  // ─── DASHBOARD ────────────────────────────────────────────────────────────
+  // â”€â”€â”€ DASHBOARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />}
@@ -2324,7 +2324,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
 
         <div className="p-4 md:p-6">
 
-          {/* ─── OVERVIEW ─── */}
+          {/* â”€â”€â”€ OVERVIEW â”€â”€â”€ */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2332,7 +2332,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   { label: 'New Enquiries', value: stats.newEnquiries, icon: 'InboxIcon', color: 'text-blue-600', bg: 'bg-blue-50', change: 'Awaiting action', onClick: () => setActiveTab('enquiries') },
                   { label: 'Active Bookings', value: stats.active, icon: 'CalendarDaysIcon', color: 'text-amber-600', bg: 'bg-amber-50', change: 'In progress', onClick: () => setActiveTab('bookings') },
                   { label: 'Completed Events', value: stats.completed, icon: 'CheckCircleIcon', color: 'text-emerald-600', bg: 'bg-emerald-50', change: 'All time', onClick: () => setActiveTab('history') },
-                  { label: 'Revenue Collected', value: `£${stats.depositsCollected.toLocaleString()}`, icon: 'BanknotesIcon', color: 'text-yellow-700', bg: 'bg-yellow-50', change: `£${stats.outstanding.toLocaleString()} outstanding`, onClick: () => setActiveTab('payments') },
+                  { label: 'Revenue Collected', value: `Â£${stats.depositsCollected.toLocaleString()}`, icon: 'BanknotesIcon', color: 'text-yellow-700', bg: 'bg-yellow-50', change: `Â£${stats.outstanding.toLocaleString()} outstanding`, onClick: () => setActiveTab('payments') },
                 ].map((stat) => (
                   <button key={stat.label} onClick={stat.onClick} className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-sm transition-shadow text-left">
                     <div className="flex items-start justify-between mb-3">
@@ -2378,7 +2378,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-gray-900 truncate">{b.name}</div>
-                          <div className="text-xs text-gray-400">{b.eventType} · {b.date} · {b.guests} guests</div>
+                          <div className="text-xs text-gray-400">{b.eventType} Â· {b.date} Â· {b.guests} guests</div>
                         </div>
                         <a href={buildWhatsAppLink(b.phone, `Hi ${b.name.split(' ')[0]}, thank you for your enquiry with Honeymoon! We'd love to help with your ${b.eventType}. Could you confirm your preferred date and guest count?`)} target="_blank" rel="noopener noreferrer"
                           className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors flex-shrink-0"
@@ -2409,9 +2409,9 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-medium text-gray-900 truncate">{b.name}</div>
-                            <div className="text-xs text-gray-400">{b.eventType} · {b.time} · {b.guests} guests</div>
+                            <div className="text-xs text-gray-400">{b.eventType} Â· {b.time} Â· {b.guests} guests</div>
                           </div>
-                          <div className="text-sm font-semibold text-gray-700 flex-shrink-0">£{getTotalAmount(b).toLocaleString()}</div>
+                          <div className="text-sm font-semibold text-gray-700 flex-shrink-0">Â£{getTotalAmount(b).toLocaleString()}</div>
                         </div>
                       );
                     })}
@@ -2424,7 +2424,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </div>
           )}
 
-          {/* ─── ENQUIRIES ─── */}
+          {/* â”€â”€â”€ ENQUIRIES â”€â”€â”€ */}
           {activeTab === 'enquiries' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -2445,7 +2445,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       </div>
                       <div>
                         <div className="font-semibold text-gray-900">{b.name}</div>
-                        <div className="text-xs text-gray-400">{b.email} · {b.phone}</div>
+                        <div className="text-xs text-gray-400">{b.email} Â· {b.phone}</div>
                       </div>
                     </div>
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[b.status]}`}>
@@ -2471,7 +2471,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   <div className="mt-3">
                     {b.package && b.package !== 'Not Selected' ? (
                       <div className="flex items-center gap-2.5 rounded-xl px-4 py-2.5 border" style={{ background: 'rgba(200,134,10,0.06)', borderColor: 'rgba(200,134,10,0.25)' }}>
-                        <span className="text-lg">🎁</span>
+                        <span className="text-lg">ðŸŽ</span>
                         <div>
                           <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#C8860A' }}>Preferred Package</div>
                           <div className="text-sm font-bold text-gray-900">{b.package}</div>
@@ -2480,8 +2480,8 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       </div>
                     ) : (
                       <div className="flex items-center gap-2.5 rounded-xl px-4 py-2.5 border border-gray-100 bg-gray-50">
-                        <span className="text-base">📋</span>
-                        <div className="text-sm text-gray-400">No specific package selected — customer needs guidance</div>
+                        <span className="text-base">ðŸ“‹</span>
+                        <div className="text-sm text-gray-400">No specific package selected â€” customer needs guidance</div>
                       </div>
                     )}
                   </div>
@@ -2515,7 +2515,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </div>
           )}
 
-          {/* ─── BOOKINGS ─── */}
+          {/* â”€â”€â”€ BOOKINGS â”€â”€â”€ */}
           {activeTab === 'bookings' && (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2603,14 +2603,14 @@ Once you have completed the transfer, please send us a screenshot of the payment
 
                             {/* Total Amount */}
                             <td className="px-4 py-3.5">
-                              <div className="text-sm font-bold text-gray-900">£{total.toLocaleString()}</div>
+                              <div className="text-sm font-bold text-gray-900">Â£{total.toLocaleString()}</div>
                               <div className="text-[10px] text-gray-400">{booking.guests} Guests</div>
                             </td>
 
                             {/* Deposit Paid */}
                             <td className="px-4 py-3.5">
                               <div className={`text-sm font-bold ${isDepositPaid ? 'text-emerald-700' : 'text-gray-700'}`}>
-                                £{depositAmt.toLocaleString()}
+                                Â£{depositAmt.toLocaleString()}
                               </div>
                               <div className="mt-0.5">
                                 <span className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded ${
@@ -2618,7 +2618,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                     ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                     : 'bg-amber-50 text-amber-700 border border-amber-200'
                                 }`}>
-                                  {isDepositPaid ? '✓ Paid' : 'Pending'}
+                                  {isDepositPaid ? 'âœ“ Paid' : 'Pending'}
                                 </span>
                               </div>
                             </td>
@@ -2627,12 +2627,12 @@ Once you have completed the transfer, please send us a screenshot of the payment
                             <td className="px-4 py-3.5">
                               {isFinalPaid || balanceDue <= 0 ? (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                  <span>✓</span> Paid in Full
+                                  <span>âœ“</span> Paid in Full
                                 </span>
                               ) : (
                                 <div>
                                   <div className="text-sm font-bold text-amber-900">
-                                    £{balanceDue.toLocaleString()}
+                                    Â£{balanceDue.toLocaleString()}
                                   </div>
                                   <span className="text-[10px] text-amber-600 font-semibold">
                                     Balance Due
@@ -2644,9 +2644,9 @@ Once you have completed the transfer, please send us a screenshot of the payment
                             {/* Discount */}
                             <td className="px-4 py-3.5">
                               {booking.discount ? (
-                                <div className="text-sm font-semibold text-red-600">-£{getDiscountAmount(booking).toLocaleString()}</div>
+                                <div className="text-sm font-semibold text-red-600">-Â£{getDiscountAmount(booking).toLocaleString()}</div>
                               ) : (
-                                <div className="text-sm text-gray-400">—</div>
+                                <div className="text-sm text-gray-400">â€”</div>
                               )}
                             </td>
 
@@ -2724,7 +2724,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </div>
           )}
 
-          {/* ─── MANUAL BOOKING ─── */}
+          {/* â”€â”€â”€ MANUAL BOOKING â”€â”€â”€ */}
           {activeTab === 'manual_booking' && (
             <ManualBookingForm
               configuredExtraCharges={configuredExtraCharges}
@@ -2783,7 +2783,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             />
           )}
 
-          {/* ─── CALENDAR ─── */}
+          {/* â”€â”€â”€ CALENDAR â”€â”€â”€ */}
           {activeTab === 'calendar' && (
             <div className="space-y-4">
               <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -2810,7 +2810,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       <div key={day} className={`h-20 rounded-lg border p-1.5 transition-colors ${isBlocked ? 'bg-red-50/40 border-red-100 hover:bg-red-50' : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50'}`}>
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-semibold text-gray-500">{day}</span>
-                          {isBlocked && <span className="text-[9px] font-bold text-red-500 uppercase tracking-wider flex items-center gap-0.5">🚫 Block</span>}
+                          {isBlocked && <span className="text-[9px] font-bold text-red-500 uppercase tracking-wider flex items-center gap-0.5">ðŸš« Block</span>}
                         </div>
                         <div className="space-y-0.5 overflow-hidden">
                           {dayBookings.slice(0, 2).map((b) => (
@@ -2843,8 +2843,8 @@ Once you have completed the transfer, please send us a screenshot of the payment
                             <div className="text-xl font-bold text-gray-900 leading-tight">{d.getDate()}</div>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-gray-900 text-sm">{b.name} — {b.eventType}</div>
-                            <div className="text-xs text-gray-400">{b.time} · {b.guests} guests · {b.package}</div>
+                            <div className="font-medium text-gray-900 text-sm">{b.name} â€” {b.eventType}</div>
+                            <div className="text-xs text-gray-400">{b.time} Â· {b.guests} guests Â· {b.package}</div>
                           </div>
                           <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold flex-shrink-0 ${STATUS_COLORS[b.status]}`}>
                             {STATUS_LABELS[b.status]}
@@ -2865,7 +2865,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </div>
           )}
 
-          {/* ─── CUSTOMERS ─── */}
+          {/* â”€â”€â”€ CUSTOMERS â”€â”€â”€ */}
           {activeTab === 'customers' && (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
@@ -2903,7 +2903,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                             <div className="text-xs text-gray-400">{customer.phone}</div>
                           </td>
                           <td className="px-4 py-3.5 text-sm text-gray-700 font-medium">{customer.totalBookings}</td>
-                          <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{customer.totalSpent > 0 ? `£${customer.totalSpent.toLocaleString()}` : '—'}</td>
+                          <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{customer.totalSpent > 0 ? `Â£${customer.totalSpent.toLocaleString()}` : 'â€”'}</td>
                           <td className="px-4 py-3.5 text-xs text-gray-500">{customer.lastEvent}</td>
                           <td className="px-4 py-3.5">
                             <div className="flex items-center gap-2">
@@ -2926,14 +2926,14 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </div>
           )}
 
-          {/* ─── PAYMENTS ─── */}
+          {/* â”€â”€â”€ PAYMENTS â”€â”€â”€ */}
           {activeTab === 'payments' && (
             <div className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {[
-                  { label: 'Deposits Collected', value: `£${stats.depositsCollected.toLocaleString()}`, icon: 'BanknotesIcon', color: 'text-emerald-600', bg: 'bg-emerald-50', sub: 'Confirmed deposits' },
-                  { label: 'Outstanding Balance', value: `£${stats.outstanding.toLocaleString()}`, icon: 'ClockIcon', color: 'text-amber-600', bg: 'bg-amber-50', sub: 'Remaining to collect' },
-                  { label: 'Total Revenue', value: `£${stats.revenue.toLocaleString()}`, icon: 'CurrencyDollarIcon', color: 'text-yellow-700', bg: 'bg-yellow-50', sub: 'Completed bookings' },
+                  { label: 'Deposits Collected', value: `Â£${stats.depositsCollected.toLocaleString()}`, icon: 'BanknotesIcon', color: 'text-emerald-600', bg: 'bg-emerald-50', sub: 'Confirmed deposits' },
+                  { label: 'Outstanding Balance', value: `Â£${stats.outstanding.toLocaleString()}`, icon: 'ClockIcon', color: 'text-amber-600', bg: 'bg-amber-50', sub: 'Remaining to collect' },
+                  { label: 'Total Revenue', value: `Â£${stats.revenue.toLocaleString()}`, icon: 'CurrencyDollarIcon', color: 'text-yellow-700', bg: 'bg-yellow-50', sub: 'Completed bookings' },
                 ].map((s) => (
                   <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4">
                     <div className={`${s.bg} w-10 h-10 rounded-xl flex items-center justify-center mb-3`}>
@@ -2990,23 +2990,23 @@ Once you have completed the transfer, please send us a screenshot of the payment
                               <div className="text-sm text-gray-700">{b.eventType}</div>
                               <div className="text-xs text-gray-400">{b.date}</div>
                             </td>
-                            <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">£{total.toLocaleString()}</td>
+                            <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">Â£{total.toLocaleString()}</td>
                             <td className="px-4 py-3.5">
                               {b.discount ? (
-                                <div className="text-sm font-semibold text-red-600">-£{getDiscountAmount(b).toLocaleString()}</div>
+                                <div className="text-sm font-semibold text-red-600">-Â£{getDiscountAmount(b).toLocaleString()}</div>
                               ) : (
-                                <div className="text-sm text-gray-400">—</div>
+                                <div className="text-sm text-gray-400">â€”</div>
                               )}
                             </td>
                             <td className="px-4 py-3.5">
-                              <div className={`text-sm font-medium ${isDepositPaid ? 'text-emerald-700' : 'text-amber-600'}`}>£{depositAmt.toLocaleString()}</div>
-                              <div className="text-xs text-gray-400">{isDepositPaid ? '✓ Paid' : 'Pending'}</div>
+                              <div className={`text-sm font-medium ${isDepositPaid ? 'text-emerald-700' : 'text-amber-600'}`}>Â£{depositAmt.toLocaleString()}</div>
+                              <div className="text-xs text-gray-400">{isDepositPaid ? 'âœ“ Paid' : 'Pending'}</div>
                             </td>
                             <td className="px-4 py-3.5">
                               {isFinalPaid || balanceDue <= 0 ? (
                                 <span className="text-sm text-emerald-600 font-semibold">Paid in full</span>
                               ) : (
-                                <span className="text-sm font-semibold text-amber-700">£{balanceDue.toLocaleString()}</span>
+                                <span className="text-sm font-semibold text-amber-700">Â£{balanceDue.toLocaleString()}</span>
                               )}
                             </td>
                             <td className="px-4 py-3.5">
@@ -3040,7 +3040,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </div>
           )}
 
-          {/* ─── MENUS ─── */}
+          {/* â”€â”€â”€ MENUS â”€â”€â”€ */}
           {activeTab === 'menus' && (
             <div className="space-y-5">
               <div className="flex items-center justify-between flex-wrap gap-2">
@@ -3054,10 +3054,10 @@ Once you have completed the transfer, please send us a screenshot of the payment
               {/* Menu Sub-tabs */}
               <div className="flex flex-wrap gap-2">
                 {([
-                  { id: 'banquet', label: '🎁 Banquet Packages' },
-                  { id: 'indian', label: '🍛 Indian Menu' },
-                  { id: 'srilankan', label: '🌴 Sri Lankan Menu' },
-                  { id: 'live', label: '🎪 Live Counter' },
+                  { id: 'banquet', label: 'ðŸŽ Banquet Packages' },
+                  { id: 'indian', label: 'ðŸ› Indian Menu' },
+                  { id: 'srilankan', label: 'ðŸŒ´ Sri Lankan Menu' },
+                  { id: 'live', label: 'ðŸŽª Live Counter' },
                 ] as { id: AdminMenuTab; label: string }[]).map((tab) => (
                   <button key={tab.id} onClick={() => setAdminMenuTab(tab.id)}
                     className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${adminMenuTab === tab.id ? 'text-white shadow-md' : 'bg-white border border-gray-200 text-gray-600 hover:border-yellow-400'}`}
@@ -3067,7 +3067,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 ))}
               </div>
 
-              {/* ─── BANQUET PACKAGES ─── */}
+              {/* â”€â”€â”€ BANQUET PACKAGES â”€â”€â”€ */}
               {adminMenuTab === 'banquet' && (
                 <div className="space-y-4">
                   {editableBanquetPackages.map((pkg) => (
@@ -3084,7 +3084,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                             <div>
-                              <label className="text-xs text-gray-500 block mb-1">Price/Person (£)</label>
+                              <label className="text-xs text-gray-500 block mb-1">Price/Person (Â£)</label>
                               <input type="number" value={editingPackageData.pricePerPerson} onChange={(e) => setEditingPackageData({ ...editingPackageData, pricePerPerson: Number(e.target.value) })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
                             </div>
                             <div>
@@ -3136,7 +3136,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                 <h3 className="font-semibold text-gray-900">{pkg.name}</h3>
                                 {pkg.tag && <span className="text-xs font-semibold px-2 py-0.5 rounded-full border" style={{ background: 'rgba(200,134,10,0.08)', color: '#C8860A', borderColor: 'rgba(200,134,10,0.3)' }}>{pkg.tag}</span>}
                               </div>
-                              <span className="text-lg font-bold" style={{ color: '#C8860A' }}>£{pkg.pricePerPerson}<span className="text-sm font-normal text-gray-500">/person (Excl. VAT)</span></span>
+                              <span className="text-lg font-bold" style={{ color: '#C8860A' }}>Â£{pkg.pricePerPerson}<span className="text-sm font-normal text-gray-500">/person (Excl. VAT)</span></span>
                               {pkg.guestLabel && <div className="text-xs text-gray-500 mt-0.5">{pkg.guestLabel}</div>}
                             </div>
                             <button onClick={() => startEditPackage(pkg)} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors hover:bg-amber-50" style={{ borderColor: '#C8860A', color: '#C8860A' }}>
@@ -3147,17 +3147,17 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
                             {'canapes' in pkg && pkg.canapes && (
                               <div className="bg-gray-50 rounded-lg p-2.5">
-                                <div className="text-xs text-gray-400 mb-0.5">Canapés</div>
-                                <div className="text-xs font-medium text-gray-700">{pkg.canapes.veg}V · {pkg.canapes.nonVeg}NV</div>
+                                <div className="text-xs text-gray-400 mb-0.5">CanapÃ©s</div>
+                                <div className="text-xs font-medium text-gray-700">{pkg.canapes.veg}V Â· {pkg.canapes.nonVeg}NV</div>
                               </div>
                             )}
                             <div className="bg-gray-50 rounded-lg p-2.5">
                               <div className="text-xs text-gray-400 mb-0.5">Starters</div>
-                              <div className="text-xs font-medium text-gray-700">{pkg.starters.veg}V · {pkg.starters.nonVeg}NV</div>
+                              <div className="text-xs font-medium text-gray-700">{pkg.starters.veg}V Â· {pkg.starters.nonVeg}NV</div>
                             </div>
                             <div className="bg-gray-50 rounded-lg p-2.5">
                               <div className="text-xs text-gray-400 mb-0.5">Mains</div>
-                              <div className="text-xs font-medium text-gray-700">{pkg.mains.veg}V · {pkg.mains.nonVeg}NV</div>
+                              <div className="text-xs font-medium text-gray-700">{pkg.mains.veg}V Â· {pkg.mains.nonVeg}NV</div>
                             </div>
                             <div className="bg-gray-50 rounded-lg p-2.5">
                               <div className="text-xs text-gray-400 mb-0.5">Desserts</div>
@@ -3171,11 +3171,11 @@ Once you have completed the transfer, please send us a screenshot of the payment
                             )}
                           </div>
                           <div className="border-t border-gray-100 pt-3">
-                            <p className="text-xs text-gray-500 mb-2 font-medium">📱 Send this package to a customer via WhatsApp:</p>
+                            <p className="text-xs text-gray-500 mb-2 font-medium">ðŸ“± Send this package to a customer via WhatsApp:</p>
                             <div className="flex flex-wrap gap-2">
                               {enquiries.concat(activeBookings).slice(0, 4).map((b) => (
                                 <a key={b.id}
-                                  href={buildWhatsAppLink(b.phone, `Hi ${b.name.split(' ')[0]}, here is our *${pkg.name}* at *£${pkg.pricePerPerson}/person* (Excl. VAT):\n\n🥗 Starters: ${pkg.starters.veg} Veg + ${pkg.starters.nonVeg} Non-Veg\n🍛 Mains: ${pkg.mains.veg} Veg + ${pkg.mains.nonVeg} Non-Veg\n🍮 Desserts: ${pkg.desserts.join(', ')}\n${pkg.drinks.length > 0 ? `🥤 Drinks: ${pkg.drinks.join(', ')}\n` : ''}${pkg.guestLabel ? `\n👥 ${pkg.guestLabel}` : ''}\n\nFor ${b.guests} guests, estimated total: *£${(pkg.pricePerPerson * b.guests).toLocaleString()}* (Excl. VAT)\n\n🧒 *Kids Pricing* (Over 50 Adults):\n${editableKidsPricing.map(kp => `${kp.ageRange}: ${kp.price}`).join('\\n')}\n\n🏢 *Venue Hire Charges:*\n${editableVenueCharges.map(vc => `• ${vc.day}: ${vc.charge}${vc.note ? ` (${vc.note})` : ''}`).join('\\n')}\n\nWould you like to go ahead with this package? Please reply to confirm! 🙏`)}
+                                  href={buildWhatsAppLink(b.phone, `Hi ${b.name.split(' ')[0]}, here is our *${pkg.name}* at *Â£${pkg.pricePerPerson}/person* (Excl. VAT):\n\nðŸ¥— Starters: ${pkg.starters.veg} Veg + ${pkg.starters.nonVeg} Non-Veg\nðŸ› Mains: ${pkg.mains.veg} Veg + ${pkg.mains.nonVeg} Non-Veg\nðŸ® Desserts: ${pkg.desserts.join(', ')}\n${pkg.drinks.length > 0 ? `ðŸ¥¤ Drinks: ${pkg.drinks.join(', ')}\n` : ''}${pkg.guestLabel ? `\nðŸ‘¥ ${pkg.guestLabel}` : ''}\n\nFor ${b.guests} guests, estimated total: *Â£${(pkg.pricePerPerson * b.guests).toLocaleString()}* (Excl. VAT)\n\nðŸ§’ *Kids Pricing* (Over 50 Adults):\n${editableKidsPricing.map(kp => `${kp.ageRange}: ${kp.price}`).join('\\n')}\n\nðŸ¢ *Venue Hire Charges:*\n${editableVenueCharges.map(vc => `â€¢ ${vc.day}: ${vc.charge}${vc.note ? ` (${vc.note})` : ''}`).join('\\n')}\n\nWould you like to go ahead with this package? Please reply to confirm! ðŸ™`)}
                                   target="_blank" rel="noopener noreferrer"
                                   className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
                                   style={{ background: '#25D366', color: 'white' }}>
@@ -3221,7 +3221,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                         <div key={i} className="flex items-center gap-3 flex-wrap">
                           <input type="text" value={row.day} onChange={(e) => setEditableDryHirePrices(prev => prev.map((r, idx) => idx === i ? { ...r, day: e.target.value } : r))} className="flex-1 min-w-[160px] border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" placeholder="Day" />
                           <input type="text" value={row.session} onChange={(e) => setEditableDryHirePrices(prev => prev.map((r, idx) => idx === i ? { ...r, session: e.target.value } : r))} className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" placeholder="Session" />
-                          <input type="number" value={row.price} onChange={(e) => setEditableDryHirePrices(prev => prev.map((r, idx) => idx === i ? { ...r, price: Number(e.target.value) } : r))} className="flex-1 min-w-[120px] border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none font-semibold" style={{ color: '#C8860A' }} placeholder="Price (£)" />
+                          <input type="number" value={row.price} onChange={(e) => setEditableDryHirePrices(prev => prev.map((r, idx) => idx === i ? { ...r, price: Number(e.target.value) } : r))} className="flex-1 min-w-[120px] border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none font-semibold" style={{ color: '#C8860A' }} placeholder="Price (Â£)" />
                         </div>
                       ))}
                     </div>
@@ -3255,12 +3255,12 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 </div>
               )}
 
-              {/* ─── INDIAN MENU EDITOR ─── */}
+              {/* â”€â”€â”€ INDIAN MENU EDITOR â”€â”€â”€ */}
               {adminMenuTab === 'indian' && (
                 <div className="space-y-4">
                   {/* Send full Indian menu to customer */}
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-amber-700 mb-2">📱 Send Full Indian Menu to a Customer:</p>
+                    <p className="text-xs font-semibold text-amber-700 mb-2">ðŸ“± Send Full Indian Menu to a Customer:</p>
                     <div className="flex flex-wrap gap-2">
                       {enquiries.concat(activeBookings).slice(0, 5).map((b) => (
                         <a key={b.id}
@@ -3312,11 +3312,11 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 </div>
               )}
 
-              {/* ─── SRI LANKAN MENU EDITOR ─── */}
+              {/* â”€â”€â”€ SRI LANKAN MENU EDITOR â”€â”€â”€ */}
               {adminMenuTab === 'srilankan' && (
                 <div className="space-y-4">
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-amber-700 mb-2">📱 Send Full Sri Lankan Menu to a Customer:</p>
+                    <p className="text-xs font-semibold text-amber-700 mb-2">ðŸ“± Send Full Sri Lankan Menu to a Customer:</p>
                     <div className="flex flex-wrap gap-2">
                       {enquiries.concat(activeBookings).slice(0, 5).map((b) => (
                         <a key={b.id}
@@ -3368,15 +3368,15 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 </div>
               )}
 
-              {/* ─── LIVE COUNTER EDITOR ─── */}
+              {/* â”€â”€â”€ LIVE COUNTER EDITOR â”€â”€â”€ */}
               {adminMenuTab === 'live' && (
                 <div className="space-y-4">
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-amber-700 mb-2">📱 Send Live Counter Package to a Customer:</p>
+                    <p className="text-xs font-semibold text-amber-700 mb-2">ðŸ“± Send Live Counter Package to a Customer:</p>
                     <div className="flex flex-wrap gap-2">
                       {enquiries.concat(activeBookings).slice(0, 5).map((b) => (
                         <a key={b.id}
-                          href={buildWhatsAppLink(b.phone, `Hi ${b.name.split(' ')[0]}, here is our *Live Counter Package* from Honeymoon:\n\n🎪 *Sri Lankan & South Indian:*\n${editableLiveCounter.srilankanSouthIndian.map(i => `• ${i.name} — £${i.price.toFixed(2)}/person`).join('\n')}\n\n🎪 *North Indian:*\n${editableLiveCounter.northIndian.map(i => `• ${i.name} — £${i.price.toFixed(2)}/person`).join('\n')}\n\n✨ *Extras:*\n${editableLiveCounter.extras.map(i => `• ${i.name} — £${i.price.toFixed(2)}`).join('\n')}\n\nPlease let us know which items you'd like to add to your event! 🙏`)}
+                          href={buildWhatsAppLink(b.phone, `Hi ${b.name.split(' ')[0]}, here is our *Live Counter Package* from Honeymoon:\n\nðŸŽª *Sri Lankan & South Indian:*\n${editableLiveCounter.srilankanSouthIndian.map(i => `â€¢ ${i.name} â€” Â£${i.price.toFixed(2)}/person`).join('\n')}\n\nðŸŽª *North Indian:*\n${editableLiveCounter.northIndian.map(i => `â€¢ ${i.name} â€” Â£${i.price.toFixed(2)}/person`).join('\n')}\n\nâœ¨ *Extras:*\n${editableLiveCounter.extras.map(i => `â€¢ ${i.name} â€” Â£${i.price.toFixed(2)}`).join('\n')}\n\nPlease let us know which items you'd like to add to your event! ðŸ™`)}
                           target="_blank" rel="noopener noreferrer"
                           className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
                           style={{ background: '#25D366', color: 'white' }}>
@@ -3400,7 +3400,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           <div key={i} className="flex items-center gap-2">
                             <input type="text" value={item.name} onChange={(e) => setEditableLiveCounter(prev => ({ ...prev, [section.key]: prev[section.key].map((v, idx) => idx === i ? { ...v, name: e.target.value } : v) }))} className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
                             <div className="flex items-center gap-1">
-                              <span className="text-sm text-gray-500">£</span>
+                              <span className="text-sm text-gray-500">Â£</span>
                               <input type="number" step="0.01" value={item.price} onChange={(e) => setEditableLiveCounter(prev => ({ ...prev, [section.key]: prev[section.key].map((v, idx) => idx === i ? { ...v, price: parseFloat(e.target.value) || 0 } : v) }))} className="w-20 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none text-right" />
                             </div>
                             {currentUser?.role === 'Super Admin' && (
@@ -3414,7 +3414,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       <div className="flex gap-2">
                         <input type="text" placeholder="Item name..." value={newLiveItemName} onChange={(e) => setNewLiveItemName(e.target.value)} className="flex-1 border border-dashed border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none bg-gray-50" />
                         <div className="flex items-center gap-1">
-                          <span className="text-sm text-gray-500">£</span>
+                          <span className="text-sm text-gray-500">Â£</span>
                           <input type="number" step="0.01" placeholder="0.00" value={newLiveItemPrice} onChange={(e) => setNewLiveItemPrice(e.target.value)} className="w-20 border border-dashed border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none bg-gray-50" />
                         </div>
                         <button onClick={() => { if (newLiveItemName.trim()) { setEditableLiveCounter(prev => ({ ...prev, [section.key]: [...prev[section.key], { name: newLiveItemName.trim(), price: parseFloat(newLiveItemPrice) || 0 }] })); setNewLiveItemName(''); setNewLiveItemPrice(''); } }}
@@ -3429,7 +3429,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </div>
           )}
 
-          {/* ─── HISTORY ─── */}
+          {/* â”€â”€â”€ HISTORY â”€â”€â”€ */}
           {activeTab === 'history' && (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
@@ -3448,7 +3448,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       </div>
                       <div>
                         <div className="font-semibold text-gray-900">{b.name}</div>
-                        <div className="text-xs text-gray-400">{b.email} · {b.phone}</div>
+                        <div className="text-xs text-gray-400">{b.email} Â· {b.phone}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -3508,14 +3508,14 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   <div className="border-t border-gray-100 pt-4">
                     <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Financial Summary</div>
                     <div className="flex flex-wrap gap-4 text-sm">
-                      <div><span className="text-gray-500">Base: </span><span className="font-semibold text-gray-900">£{b.baseAmount.toLocaleString()}</span></div>
+                      <div><span className="text-gray-500">Base: </span><span className="font-semibold text-gray-900">Â£{b.baseAmount.toLocaleString()}</span></div>
                       {b.extraCharges.length > 0 && (
-                        <div><span className="text-gray-500">Extras: </span><span className="font-semibold text-amber-700">+£{b.extraCharges.reduce((s, c) => s + c.amount, 0).toLocaleString()}</span></div>
+                        <div><span className="text-gray-500">Extras: </span><span className="font-semibold text-amber-700">+Â£{b.extraCharges.reduce((s, c) => s + c.amount, 0).toLocaleString()}</span></div>
                       )}
                       {b.discount && (
-                        <div><span className="text-gray-500">Discount: </span><span className="font-semibold text-red-600">-£{getDiscountAmount(b).toLocaleString()}</span></div>
+                        <div><span className="text-gray-500">Discount: </span><span className="font-semibold text-red-600">-Â£{getDiscountAmount(b).toLocaleString()}</span></div>
                       )}
-                      <div><span className="text-gray-500">Total: </span><span className="font-bold" style={{ color: '#C8860A' }}>£{getTotalAmount(b).toLocaleString()}</span></div>
+                      <div><span className="text-gray-500">Total: </span><span className="font-bold" style={{ color: '#C8860A' }}>Â£{getTotalAmount(b).toLocaleString()}</span></div>
                       <div className="flex items-center gap-1"><Icon name="CheckCircleIcon" size={14} className="text-emerald-500" /><span className="text-emerald-700 font-medium text-xs">Fully Paid</span></div>
                     </div>
                   </div>
@@ -3585,7 +3585,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </div>
           )}
 
-          {/* ─── SETTINGS ─── */}
+          {/* â”€â”€â”€ SETTINGS â”€â”€â”€ */}
           {activeTab === 'settings' && (
             <div className="space-y-6 max-w-5xl">
               {/* Extra Charges, Fees & Taxes */}
@@ -3644,11 +3644,18 @@ Once you have completed the transfer, please send us a screenshot of the payment
                     <div className="flex items-center justify-between">
                       <label className="text-sm text-gray-600">Deposit Amount</label>
                       <div className="flex items-center gap-1">
-                        <span className="text-gray-500 text-sm">£</span>
+                        <span className="text-gray-500 text-sm">Â£</span>
                         <input type="number" value={pricingDetails.depositPercentage} onChange={e => {
                           const val = Number(e.target.value);
                           setPricingDetails(p => ({ ...p, depositPercentage: val, depositAmount: val }));
                         }} className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none bg-gray-50" />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm text-gray-600">Minimum Guests (Pax)</label>
+                      <div className="flex items-center gap-1">
+                        <input type="number" min={1} value={pricingDetails.minimumGuests} onChange={e => setPricingDetails(p => ({ ...p, minimumGuests: Number(e.target.value) || 1 }))} className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none bg-gray-50" />
+                        <span className="text-gray-500 text-sm">pax</span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
@@ -3658,14 +3665,14 @@ Once you have completed the transfer, please send us a screenshot of the payment
                     <div className="flex items-center justify-between">
                       <label className="text-sm text-gray-600">Weekday Rate (per hour)</label>
                       <div className="flex items-center gap-1">
-                        <span className="text-gray-500 text-sm">£</span>
+                        <span className="text-gray-500 text-sm">Â£</span>
                         <input type="number" value={pricingDetails.weekdayRate} onChange={e => setPricingDetails(p => ({ ...p, weekdayRate: Number(e.target.value) }))} className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none bg-gray-50" />
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <label className="text-sm text-gray-600">Weekend Rate (per hour)</label>
                       <div className="flex items-center gap-1">
-                        <span className="text-gray-500 text-sm">£</span>
+                        <span className="text-gray-500 text-sm">Â£</span>
                         <input type="number" value={pricingDetails.weekendRate} onChange={e => setPricingDetails(p => ({ ...p, weekendRate: Number(e.target.value) }))} className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none bg-gray-50" />
                       </div>
                     </div>
@@ -3729,7 +3736,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </div>
           </div>
           )}
-          {/* ─── DISCOUNT APPROVALS ─── */}
+          {/* â”€â”€â”€ DISCOUNT APPROVALS â”€â”€â”€ */}
           {activeTab === 'discount_approvals' && (
             <div className="space-y-4">
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden p-5">
@@ -3765,13 +3772,13 @@ Once you have completed the transfer, please send us a screenshot of the payment
                               <div className="flex justify-between items-start flex-wrap gap-2">
                                 <div>
                                   <h4 className="font-bold text-gray-900 text-base">{b.name}</h4>
-                                  <div className="text-xs text-gray-500 mt-1">{b.email} • {b.phone}</div>
+                                  <div className="text-xs text-gray-500 mt-1">{b.email} â€¢ {b.phone}</div>
                                 </div>
                                 <div className="bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg text-right">
                                   <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Requested Discount</div>
                                   <div className="font-bold text-amber-900 mt-0.5">
-                                    {b.discountRequest?.type === 'percentage' ? `${b.discountRequest.value}%` : `£${b.discountRequest?.value}`}
-                                    <span className="text-sm font-medium ml-1">(-£{discountReqVal.toLocaleString()})</span>
+                                    {b.discountRequest?.type === 'percentage' ? `${b.discountRequest.value}%` : `Â£${b.discountRequest?.value}`}
+                                    <span className="text-sm font-medium ml-1">(-Â£{discountReqVal.toLocaleString()})</span>
                                   </div>
                                   <div className="text-xs text-gray-600 mt-1 italic">"{b.discountRequest?.reason}"</div>
                                 </div>
@@ -3791,19 +3798,19 @@ Once you have completed the transfer, please send us a screenshot of the payment
                               <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
                                 <div className="flex justify-between text-sm">
                                   <span className="text-gray-500 font-medium">Total (Base + Extras)</span>
-                                  <span className="font-semibold text-gray-900">£{totalBeforeDiscount.toLocaleString()}</span>
+                                  <span className="font-semibold text-gray-900">Â£{totalBeforeDiscount.toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
                                   <span className="text-amber-600 font-medium">Requested Discount</span>
-                                  <span className="font-bold text-amber-700">-£{discountReqVal.toLocaleString()}</span>
+                                  <span className="font-bold text-amber-700">-Â£{discountReqVal.toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
                                   <span className="text-emerald-600 font-medium">Deposit Paid</span>
-                                  <span className="font-semibold text-emerald-700">-£{b.deposit.toLocaleString()}</span>
+                                  <span className="font-semibold text-emerald-700">-Â£{b.deposit.toLocaleString()}</span>
                                 </div>
                                 <div className="border-t border-gray-200 pt-2 flex justify-between items-center mt-1">
                                   <span className="font-bold text-gray-900 text-xs uppercase tracking-wide">Final Pending Amount <span className="text-[10px] text-gray-400 font-normal normal-case ml-1">(If Approved)</span></span>
-                                  <span className="font-bold text-lg text-indigo-700">£{(totalBeforeDiscount - discountReqVal - b.deposit).toLocaleString()}</span>
+                                  <span className="font-bold text-lg text-indigo-700">Â£{(totalBeforeDiscount - discountReqVal - b.deposit).toLocaleString()}</span>
                                 </div>
                               </div>
                             </div>
@@ -3865,7 +3872,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                             <div className="flex justify-between items-start flex-wrap gap-2">
                               <div>
                                 <h4 className="font-bold text-gray-900 text-base">{b.name}</h4>
-                                <div className="text-xs text-gray-500 mt-1">{b.email} • {b.phone}</div>
+                                <div className="text-xs text-gray-500 mt-1">{b.email} â€¢ {b.phone}</div>
                               </div>
                               <div className={`border px-3 py-1.5 rounded-lg text-right ${b.discountRequest?.status === 'approved' ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
                                 <div className={`text-xs font-semibold uppercase tracking-wide flex items-center gap-1 justify-end ${b.discountRequest?.status === 'approved' ? 'text-emerald-700' : 'text-red-700'}`}>
@@ -3873,8 +3880,8 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                   {b.discountRequest?.status === 'approved' ? 'Approved' : 'Rejected'} Discount
                                 </div>
                                 <div className={`font-bold mt-0.5 ${b.discountRequest?.status === 'approved' ? 'text-emerald-900' : 'text-red-900'}`}>
-                                  {b.discountRequest?.type === 'percentage' ? `${b.discountRequest.value}%` : `£${b.discountRequest?.value}`}
-                                  <span className="text-sm font-medium ml-1">(-£{discountReqVal.toLocaleString()})</span>
+                                  {b.discountRequest?.type === 'percentage' ? `${b.discountRequest.value}%` : `Â£${b.discountRequest?.value}`}
+                                  <span className="text-sm font-medium ml-1">(-Â£{discountReqVal.toLocaleString()})</span>
                                 </div>
                                 <div className="text-xs text-gray-600 mt-1 italic">"{b.discountRequest?.reason}"</div>
                               </div>
@@ -3883,7 +3890,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                             <div className="flex items-center gap-6 text-sm text-gray-600 border-t border-gray-100 pt-3">
                               <div><span className="text-gray-400 mr-1">Event Type:</span> {b.eventType}</div>
                               <div><span className="text-gray-400 mr-1">Guests:</span> {b.guests}</div>
-                              <div><span className="text-gray-400 mr-1">Total Amount:</span> £{totalBeforeDiscount.toLocaleString()}</div>
+                              <div><span className="text-gray-400 mr-1">Total Amount:</span> Â£{totalBeforeDiscount.toLocaleString()}</div>
                             </div>
                           </div>
                         );
@@ -3898,7 +3905,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             <AccessControl currentUserRole={currentUser?.role} />
           )}
 
-          {/* ─── BOOKING TRACKER ─── */}
+          {/* â”€â”€â”€ BOOKING TRACKER â”€â”€â”€ */}
           {activeTab === 'tracker' && (
             <div className="space-y-6 max-w-4xl mx-auto">
               <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
@@ -3964,7 +3971,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                 <div className="font-semibold text-gray-900 text-sm group-hover:text-[#C8860A] transition-colors">{b.name}</div>
                                 <div className="text-xs text-gray-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                                   <span className="flex items-center gap-1"><Icon name="EnvelopeIcon" size={12} /> {b.email}</span>
-                                  <span className="hidden sm:inline text-gray-300">•</span>
+                                  <span className="hidden sm:inline text-gray-300">â€¢</span>
                                   <span className="flex items-center gap-1"><Icon name="PhoneIcon" size={12} /> {b.phone}</span>
                                 </div>
                               </div>
@@ -4034,7 +4041,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                   
                                   {step === 'menu_selected' && <div className="flex items-center gap-2"><Icon name="ListBulletIcon" size={16} className="text-amber-500" /> Selected Menu: <span className="font-semibold text-gray-800">{tb.selectedMenu || tb.package}</span></div>}
                                   
-                                  {step === 'deposit_pending' && <div className="flex items-center gap-2"><Icon name="ClockIcon" size={16} className="text-amber-600" /> Deposit requested: <span className="font-semibold text-gray-800">£{tb.deposit.toLocaleString()}</span></div>}
+                                  {step === 'deposit_pending' && <div className="flex items-center gap-2"><Icon name="ClockIcon" size={16} className="text-amber-600" /> Deposit requested: <span className="font-semibold text-gray-800">Â£{tb.deposit.toLocaleString()}</span></div>}
                                   
                                   {step === 'deposit_confirmed' && (
                                     <div className="space-y-3">
@@ -4050,7 +4057,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                     </div>
                                   )}
                                   
-                                  {step === 'final_invoice_sent' && <div className="flex items-center gap-2"><Icon name="DocumentArrowUpIcon" size={16} className="text-blue-500" /> Final invoice sent. Balance Due: <span className="font-bold text-gray-900">£{(getTotalAmount(tb) - tb.deposit).toLocaleString()}</span></div>}
+                                  {step === 'final_invoice_sent' && <div className="flex items-center gap-2"><Icon name="DocumentArrowUpIcon" size={16} className="text-blue-500" /> Final invoice sent. Balance Due: <span className="font-bold text-gray-900">Â£{(getTotalAmount(tb) - tb.deposit).toLocaleString()}</span></div>}
                                   
                                   {step === 'final_payment_received' && (
                                     <div className="space-y-3">
@@ -4106,7 +4113,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
         </div>
       </main>
 
-      {/* ─── BOOKING DETAIL / WORKFLOW DRAWER ─── */}
+      {/* â”€â”€â”€ BOOKING DETAIL / WORKFLOW DRAWER â”€â”€â”€ */}
       {selectedBooking && (
         <div className="fixed inset-0 z-50 flex">
           <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={() => { setSelectedBooking(null); setShowMenuPanel(false); setIsEditingBookingDate(false); setIsEditingEventType(false); setIsEditingPackage(false); setIsEditingTime(false); setIsEditingGuests(false); }} />
@@ -4122,7 +4129,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 )}
                 <div>
                   <h2 className="font-semibold text-gray-900">Booking #{selectedBooking.id}</h2>
-                  <p className="text-xs text-gray-400">{selectedBooking.eventType} · {selectedBooking.date}</p>
+                  <p className="text-xs text-gray-400">{selectedBooking.eventType} Â· {selectedBooking.date}</p>
                 </div>
               </div>
               <button onClick={() => { setSelectedBooking(null); setShowMenuPanel(false); setIsEditingBookingDate(false); setIsEditingEventType(false); setIsEditingPackage(false); setIsEditingTime(false); setIsEditingGuests(false); }} className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors">
@@ -4571,7 +4578,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 )}
               </div>
 
-              {/* ── STEP-SPECIFIC PANELS ── */}
+              {/* â”€â”€ STEP-SPECIFIC PANELS â”€â”€ */}
 
               {/* Select Package Block */}
               {(selectedBooking.status === 'menu_sent' || selectedBooking.status === 'menu_selected') && (
@@ -4661,7 +4668,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                         <optgroup label="Buffet Packages">
                           {editableBanquetPackages.map(pkg => (
                             <option key={pkg.id} value={pkg.name}>
-                              {pkg.name} (£{pkg.pricePerPerson}/person)
+                              {pkg.name} (Â£{pkg.pricePerPerson}/person)
                             </option>
                           ))}
                         </optgroup>
@@ -4674,7 +4681,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                         <optgroup label="Extras">
                           {(editableLiveCounter?.extras || []).map(extra => (
                             <option key={extra.name} value={extra.name}>
-                              {extra.name} (£{extra.price})
+                              {extra.name} (Â£{extra.price})
                             </option>
                           ))}
                         </optgroup>
@@ -4731,7 +4738,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                 className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
                               />
                               <span className="flex-1 text-gray-800">{extra.name}</span>
-                              <span className="font-semibold text-amber-700">£{extra.price}</span>
+                              <span className="font-semibold text-amber-700">Â£{extra.price}</span>
                             </label>
                           );
                         })}
@@ -4844,7 +4851,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                     {(selectedBooking.selectedMenu || selectedBooking.package) && (
                       <div className="grid grid-cols-2 gap-3 pt-1">
                         <div>
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Base Price (£)</label>
+                          <label className="block text-xs font-semibold text-gray-500 mb-1">Base Price (Â£)</label>
                           <input
                             type="number"
                             value={selectedBooking.baseAmount || ''}
@@ -4874,7 +4881,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-semibold text-gray-500 mb-1">Deposit Required (£)</label>
+                          <label className="block text-xs font-semibold text-gray-500 mb-1">Deposit Required (Â£)</label>
                           <input
                             type="number"
                             min={pricingDetails.depositPercentage}
@@ -4907,7 +4914,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 </div>
               )}
 
-              {/* Step: Menu Sent — show real menu packages */}
+              {/* Step: Menu Sent â€” show real menu packages */}
               {(selectedBooking.status === 'menu_sent' || showMenuPanel) && selectedBooking.status !== 'menu_selected' && selectedBooking.status !== 'deposit_pending' && selectedBooking.status !== 'deposit_confirmed' && selectedBooking.status !== 'event_scheduled' && selectedBooking.status !== 'event_completed' && selectedBooking.status !== 'final_invoice_sent' && selectedBooking.status !== 'final_payment_received' && selectedBooking.status !== 'completed' && (
                 <div className="border border-purple-200 rounded-xl p-4 bg-purple-50">
                   <div className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-3">Send Menu Packages via WhatsApp</div>
@@ -4924,9 +4931,9 @@ Once you have completed the transfer, please send us a screenshot of the payment
                         <div key={pkg.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-purple-100">
                           <div>
                             <div className="text-sm font-medium text-gray-900">{pkg.name}</div>
-                            <div className="text-xs text-gray-500">£{pkg.pricePerPerson}/person · Est. £{estTotal.toLocaleString()} for {totalGuests} guests</div>
+                            <div className="text-xs text-gray-500">Â£{pkg.pricePerPerson}/person Â· Est. Â£{estTotal.toLocaleString()} for {totalGuests} guests</div>
                           </div>
-                          <a href={buildWhatsAppLink(selectedBooking.phone, `Hi ${selectedBooking.name.split(' ')[0]}, here is our *${pkg.name}* at *£${pkg.pricePerPerson}/person* (Excl. VAT):\n\n🥗 Starters: ${pkg.starters.veg} Veg + ${pkg.starters.nonVeg} Non-Veg\n🍛 Mains: ${pkg.mains.veg} Veg + ${pkg.mains.nonVeg} Non-Veg\n🍮 Desserts: ${pkg.desserts.join(', ')}\n${pkg.drinks.length > 0 ? `🥤 Drinks: ${pkg.drinks.join(', ')}\n` : ''}${pkg.guestLabel ? `\n👥 ${pkg.guestLabel}` : ''}\n\nFor ${adults} Adults and ${kids4to10} Kids, estimated total: *£${estTotal.toLocaleString()}* (Excl. VAT)\n\n🧒 *Kids Pricing* (Over 50 Adults):\n${editableKidsPricing.map(kp => `${kp.ageRange}: ${kp.price}`).join('\\n')}\n\n🏢 *Venue Hire Charges:*\n${editableVenueCharges.map(vc => `• ${vc.day}: ${vc.charge}${vc.note ? ` (${vc.note})` : ''}`).join('\\n')}\n\n🎪 *Extras Available:*\n${(editableLiveCounter?.extras || []).map(e => `• ${e.name}: £${e.price}`).join('\\n')}\n\nPlease reply with your selection! 🙏`)}
+                          <a href={buildWhatsAppLink(selectedBooking.phone, `Hi ${selectedBooking.name.split(' ')[0]}, here is our *${pkg.name}* at *Â£${pkg.pricePerPerson}/person* (Excl. VAT):\n\nðŸ¥— Starters: ${pkg.starters.veg} Veg + ${pkg.starters.nonVeg} Non-Veg\nðŸ› Mains: ${pkg.mains.veg} Veg + ${pkg.mains.nonVeg} Non-Veg\nðŸ® Desserts: ${pkg.desserts.join(', ')}\n${pkg.drinks.length > 0 ? `ðŸ¥¤ Drinks: ${pkg.drinks.join(', ')}\n` : ''}${pkg.guestLabel ? `\nðŸ‘¥ ${pkg.guestLabel}` : ''}\n\nFor ${adults} Adults and ${kids4to10} Kids, estimated total: *Â£${estTotal.toLocaleString()}* (Excl. VAT)\n\nðŸ§’ *Kids Pricing* (Over 50 Adults):\n${editableKidsPricing.map(kp => `${kp.ageRange}: ${kp.price}`).join('\\n')}\n\nðŸ¢ *Venue Hire Charges:*\n${editableVenueCharges.map(vc => `â€¢ ${vc.day}: ${vc.charge}${vc.note ? ` (${vc.note})` : ''}`).join('\\n')}\n\nðŸŽª *Extras Available:*\n${(editableLiveCounter?.extras || []).map(e => `â€¢ ${e.name}: Â£${e.price}`).join('\\n')}\n\nPlease reply with your selection! ðŸ™`)}
                             target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg flex-shrink-0 ml-2"
                             style={{ background: '#25D366', color: 'white' }}>
@@ -4988,7 +4995,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 </div>
               )}
 
-              {/* Step: Deposit Pending — send bank details */}
+              {/* Step: Deposit Pending â€” send bank details */}
               {selectedBooking.status === 'deposit_pending' && (
                 <div className="border border-amber-200 rounded-xl p-4 bg-amber-50">
                   <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-3">Send Deposit Request via WhatsApp</div>
@@ -4997,9 +5004,9 @@ Once you have completed the transfer, please send us a screenshot of the payment
                     <p>Account Name: {bankDetails.accountName}</p>
                     <p>Sort Code: {bankDetails.sortCode}</p>
                     <p>Account No: {bankDetails.accountNumber}</p>
-                    <p className="mt-1 font-semibold text-amber-700">Deposit Amount: £{selectedBooking.deposit.toLocaleString()}</p>
+                    <p className="mt-1 font-semibold text-amber-700">Deposit Amount: Â£{selectedBooking.deposit.toLocaleString()}</p>
                   </div>
-                  <a href={buildWhatsAppLink(selectedBooking.phone, `Hi ${selectedBooking.name.split(' ')[0]}, to confirm your ${selectedBooking.eventType} booking on ${selectedBooking.date}, please transfer the deposit of *£${selectedBooking.deposit.toLocaleString()}* to:\n\n🏦 Account Name: ${bankDetails.accountName}\n📋 Sort Code: ${bankDetails.sortCode}\n🔢 Account No: ${bankDetails.accountNumber}\n📌 Reference: ${selectedBooking.id}\n\nOnce paid, please send a screenshot of the transfer confirmation. Thank you!`)}
+                  <a href={buildWhatsAppLink(selectedBooking.phone, `Hi ${selectedBooking.name.split(' ')[0]}, to confirm your ${selectedBooking.eventType} booking on ${selectedBooking.date}, please transfer the deposit of *Â£${selectedBooking.deposit.toLocaleString()}* to:\n\nðŸ¦ Account Name: ${bankDetails.accountName}\nðŸ“‹ Sort Code: ${bankDetails.sortCode}\nðŸ”¢ Account No: ${bankDetails.accountNumber}\nðŸ“Œ Reference: ${selectedBooking.id}\n\nOnce paid, please send a screenshot of the transfer confirmation. Thank you!`)}
                     target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl w-full justify-center"
                     style={{ background: '#25D366', color: 'white' }}>
@@ -5122,13 +5129,13 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 </div>
               )}
 
-              {/* ── STEP: Set Final Payment Due Date (mandatory after calendar) ── */}
+              {/* â”€â”€ STEP: Set Final Payment Due Date (mandatory after calendar) â”€â”€ */}
               {['deposit_confirmed', 'final_invoice_sent'].includes(selectedBooking.status) && (
                 <div className={`rounded-xl p-4 border-2 ${selectedBooking.dueDate ? 'border-amber-200 bg-amber-50' : 'border-red-400 bg-red-50'}`}>
                   <div className="flex items-center justify-between mb-3">
                     <div className={`text-xs font-bold uppercase tracking-wide flex items-center gap-1.5 ${selectedBooking.dueDate ? 'text-amber-700' : 'text-red-700'}`}>
                       <Icon name="CalendarDaysIcon" size={14} />
-                      {selectedBooking.dueDate ? '✅ Final Payment Due Date' : '⚠️ Set Final Payment Due Date (Required)'}
+                      {selectedBooking.dueDate ? 'âœ… Final Payment Due Date' : 'âš ï¸ Set Final Payment Due Date (Required)'}
                     </div>
                     {selectedBooking.dueDate && !['final_payment_received', 'event_completed', 'completed'].includes(selectedBooking.status) && (
                       <button onClick={() => setIsEditingDueDate(v => !v)} className="text-[10px] text-amber-600 hover:text-amber-900 font-semibold flex items-center gap-0.5">
@@ -5161,11 +5168,11 @@ Once you have completed the transfer, please send us a screenshot of the payment
                         }}
                         className="w-full border-2 border-red-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-400 font-bold text-gray-800"
                       />
-                      <p className="text-[10px] text-red-500 text-center italic">⛔ Final Invoice is locked until you set this date</p>
+                      <p className="text-[10px] text-red-500 text-center italic">â›” Final Invoice is locked until you set this date</p>
                     </div>
                   ) : (
                     <div>
-                      <div className="text-xl font-bold text-amber-900 mb-1">📅 {selectedBooking.dueDate}</div>
+                      <div className="text-xl font-bold text-amber-900 mb-1">ðŸ“… {selectedBooking.dueDate}</div>
                       <p className="text-xs text-amber-700">Full balance must be received by this date before the event.</p>
                       {(isEditingDueDate && !['final_payment_received', 'event_completed', 'completed'].includes(selectedBooking.status)) && (
                         <input
@@ -5189,7 +5196,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 </div>
               )}
 
-              {/* Step: Extra Charges — only show after event is scheduled */}
+              {/* Step: Extra Charges â€” only show after event is scheduled */}
               {['event_scheduled', 'event_completed'].includes(selectedBooking.status) && (
                 <div className="border border-teal-200 rounded-xl p-4 bg-teal-50">
                   <div className="text-xs font-semibold text-teal-700 uppercase tracking-wide mb-3">Adjustments / Extra Charges</div>
@@ -5202,7 +5209,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           <div key={idx} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-teal-100">
                             <span className="text-sm text-gray-700">{charge.label}</span>
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-gray-900">+£{charge.amount.toLocaleString()}</span>
+                              <span className="text-sm font-semibold text-gray-900">+Â£{charge.amount.toLocaleString()}</span>
                               <button onClick={() => removeExtraCharge(selectedBooking.id, idx)} className="text-red-400 hover:text-red-600">
                                 <Icon name="XMarkIcon" size={14} />
                               </button>
@@ -5229,7 +5236,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                               }}
                               className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-teal-50 border border-teal-200 text-teal-800 hover:bg-teal-100 transition-colors"
                             >
-                              + {charge.label} (£{calculatedAmt})
+                              + {charge.label} (Â£{calculatedAmt})
                             </button>
                           );
                         })}
@@ -5238,7 +5245,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   )}
                   <div className="flex gap-2">
                     <input type="text" placeholder="e.g. Extra 10 guests" value={extraLabel} onChange={(e) => setExtraLabel(e.target.value)} className="flex-1 border border-teal-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white" />
-                    <input type="number" placeholder="£ amount" value={extraAmount} onChange={(e) => setExtraAmount(e.target.value)} className="w-24 border border-teal-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white" />
+                    <input type="number" placeholder="Â£ amount" value={extraAmount} onChange={(e) => setExtraAmount(e.target.value)} className="w-24 border border-teal-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white" />
                     <button onClick={() => addExtraCharge(selectedBooking.id)} className="text-white text-sm font-semibold px-3 py-2 rounded-lg" style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}>
                       <Icon name="PlusIcon" size={16} />
                     </button>
@@ -5254,12 +5261,12 @@ Once you have completed the transfer, please send us a screenshot of the payment
                     <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-indigo-100">
                       <div className="flex flex-col">
                         <span className="text-sm font-semibold text-indigo-900">
-                          {selectedBooking.discount.type === 'percentage' ? `${selectedBooking.discount.value}%` : `£${selectedBooking.discount.value}`} Discount
+                          {selectedBooking.discount.type === 'percentage' ? `${selectedBooking.discount.value}%` : `Â£${selectedBooking.discount.value}`} Discount
                         </span>
                         <span className="text-xs text-gray-500">{selectedBooking.discount.reason}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-red-600">-£{getDiscountAmount(selectedBooking).toLocaleString()}</span>
+                        <span className="text-sm font-semibold text-red-600">-Â£{getDiscountAmount(selectedBooking).toLocaleString()}</span>
                         <button onClick={() => removeDiscount(selectedBooking.id)} className="text-red-400 hover:text-red-600">
                           <Icon name="XMarkIcon" size={14} />
                         </button>
@@ -5270,7 +5277,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-amber-200">
                         <div className="flex flex-col">
                           <span className="text-sm font-semibold text-amber-700">
-                            {selectedBooking.discountRequest.type === 'percentage' ? `${selectedBooking.discountRequest.value}%` : `£${selectedBooking.discountRequest.value}`} Discount Requested
+                            {selectedBooking.discountRequest.type === 'percentage' ? `${selectedBooking.discountRequest.value}%` : `Â£${selectedBooking.discountRequest.value}`} Discount Requested
                           </span>
                           <span className="text-xs text-gray-500">{selectedBooking.discountRequest.reason}</span>
                         </div>
@@ -5287,7 +5294,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       )}
                       <div className="flex gap-2">
                         <select value={discountType} onChange={(e) => setDiscountType(e.target.value as 'fixed' | 'percentage')} className="border border-indigo-200 rounded-lg px-2 py-2 text-sm focus:outline-none bg-white flex-shrink-0">
-                          <option value="fixed">£ Fixed</option>
+                          <option value="fixed">Â£ Fixed</option>
                           <option value="percentage">% Percent</option>
                         </select>
                         <input type="number" placeholder="Value" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} className="flex-1 min-w-0 border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white" />
@@ -5332,34 +5339,34 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 </div>
               )}
 
-              {/* Step: Final Invoice — only show after due date is set */}
+              {/* Step: Final Invoice â€” only show after due date is set */}
               {selectedBooking.status === 'final_invoice_sent' && selectedBooking.discountRequest?.status !== 'pending' && selectedBooking.dueDate && (
                 <div className="border border-yellow-200 rounded-xl p-4 bg-yellow-50">
                   <div className="text-xs font-semibold text-yellow-700 uppercase tracking-wide mb-3">Final Invoice</div>
                   <div className="bg-white rounded-lg p-4 border border-yellow-100 space-y-2 mb-3">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Base Amount</span>
-                      <span className="font-medium text-gray-900">£{selectedBooking.baseAmount.toLocaleString()}</span>
+                      <span className="font-medium text-gray-900">Â£{selectedBooking.baseAmount.toLocaleString()}</span>
                     </div>
                     {selectedBooking.extraCharges.map((c, i) => (
                       <div key={i} className="flex justify-between text-sm">
                         <span className="text-gray-600">{c.label}</span>
-                        <span className="font-medium text-amber-700">+£{c.amount.toLocaleString()}</span>
+                        <span className="font-medium text-amber-700">+Â£{c.amount.toLocaleString()}</span>
                       </div>
                     ))}
                     {selectedBooking.discount && (
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Discount ({selectedBooking.discount.reason})</span>
-                        <span className="font-medium text-red-600">-£{getDiscountAmount(selectedBooking).toLocaleString()}</span>
+                        <span className="font-medium text-red-600">-Â£{getDiscountAmount(selectedBooking).toLocaleString()}</span>
                       </div>
                     )}
                     <div className="border-t border-gray-200 pt-2 flex justify-between text-sm">
                       <span className="text-gray-600">Deposit Paid</span>
-                      <span className="font-medium text-emerald-700">-£{selectedBooking.deposit.toLocaleString()}</span>
+                      <span className="font-medium text-emerald-700">-Â£{selectedBooking.deposit.toLocaleString()}</span>
                     </div>
                     <div className="border-t border-gray-200 pt-2 flex justify-between">
                       <span className="font-bold text-gray-900">Balance Due</span>
-                      <span className="font-bold text-lg" style={{ color: '#C8860A' }}>£{(getTotalAmount(selectedBooking) - selectedBooking.deposit).toLocaleString()}</span>
+                      <span className="font-bold text-lg" style={{ color: '#C8860A' }}>Â£{(getTotalAmount(selectedBooking) - selectedBooking.deposit).toLocaleString()}</span>
                     </div>
                   </div>
                   <a href={buildWhatsAppLink(selectedBooking.phone, buildFinalInvoiceWhatsAppText(selectedBooking, bankDetails))}
@@ -5372,7 +5379,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 </div>
               )}
 
-              {/* Step: Final Payment — Bank Details & Method */}
+              {/* Step: Final Payment â€” Bank Details & Method */}
               {selectedBooking.status === 'final_invoice_sent' && (
                 <div className="space-y-3">
                   {/* Bank Details Card with WhatsApp Sharing */}
@@ -5383,7 +5390,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                         Bank Account Details for Final Balance
                       </span>
                       <span className="text-xs font-extrabold text-[#C8860A] bg-white px-2.5 py-0.5 rounded-md border border-amber-200 shadow-2xs">
-                        Due: £{(getTotalAmount(selectedBooking) - selectedBooking.deposit).toLocaleString()}
+                        Due: Â£{(getTotalAmount(selectedBooking) - selectedBooking.deposit).toLocaleString()}
                       </span>
                     </div>
 
@@ -5496,7 +5503,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                         <div className="flex flex-col gap-2 flex-1">
                           <div className="flex items-center gap-2 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
                             <Icon name="CheckCircleIcon" size={15} />
-                            Payment proof received — ready to confirm and close order
+                            Payment proof received â€” ready to confirm and close order
                           </div>
                           <div className="flex items-center">
                             <input
@@ -5569,19 +5576,19 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       <div className="bg-white rounded-lg p-2.5 border border-gray-100 space-y-1 mb-1">
                         <div className="text-xs font-semibold text-gray-500 mb-1.5">Guest Breakdown</div>
                         <div className="flex justify-between text-xs text-gray-600">
-                          <span>Adults ({adults}) × £{pricePerPerson}/person</span>
-                          <span className="font-medium">£{(adults * pricePerPerson).toLocaleString()}</span>
+                          <span>Adults ({adults}) Ã— Â£{pricePerPerson}/person</span>
+                          <span className="font-medium">Â£{(adults * pricePerPerson).toLocaleString()}</span>
                         </div>
                         {kids4to10 > 0 && (
                           <div className="flex justify-between text-xs text-gray-600">
-                            <span>Kids 4-10 yrs ({kids4to10}) × £{kidsPrice}/person</span>
-                            <span className="font-medium">£{(kids4to10 * kidsPrice).toLocaleString()}</span>
+                            <span>Kids 4-10 yrs ({kids4to10}) Ã— Â£{kidsPrice}/person</span>
+                            <span className="font-medium">Â£{(kids4to10 * kidsPrice).toLocaleString()}</span>
                           </div>
                         )}
                         {kidsUnder4 > 0 && (
                           <div className="flex justify-between text-xs text-gray-600">
-                            <span>Kids 0-4 yrs ({kidsUnder4}) × Free</span>
-                            <span className="font-medium text-emerald-600">£0</span>
+                            <span>Kids 0-4 yrs ({kidsUnder4}) Ã— Free</span>
+                            <span className="font-medium text-emerald-600">Â£0</span>
                           </div>
                         )}
                         <div className="border-t border-gray-100 pt-1 flex justify-between text-xs font-semibold text-gray-700">
@@ -5598,8 +5605,8 @@ Once you have completed the transfer, please send us a screenshot of the payment
                     if (!hallCharge) return null;
                     return (
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">🏛️ {hallCharge.label}</span>
-                        <span className="font-semibold text-indigo-700">£{hallCharge.amount.toLocaleString()}</span>
+                        <span className="text-gray-600">ðŸ›ï¸ {hallCharge.label}</span>
+                        <span className="font-semibold text-indigo-700">Â£{hallCharge.amount.toLocaleString()}</span>
                       </div>
                     );
                   })()}
@@ -5609,8 +5616,8 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       <div className="text-xs font-semibold text-gray-500 mt-2 mb-1">Extras</div>
                       {selectedBooking.extraCharges.map((c, i) => (
                         <div key={i} className="flex justify-between text-xs text-gray-600">
-                          <span>• {c.label}</span>
-                          <span className="font-medium text-amber-700">+£{c.amount.toLocaleString()}</span>
+                          <span>â€¢ {c.label}</span>
+                          <span className="font-medium text-amber-700">+Â£{c.amount.toLocaleString()}</span>
                         </div>
                       ))}
                     </div>
@@ -5618,7 +5625,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
 
                   <div className="flex justify-between text-sm mt-1">
                     <span className="text-gray-600">Food Package Total</span>
-                    <span className="font-semibold text-gray-900">£{getFoodPackageTotal(selectedBooking).toLocaleString()}</span>
+                    <span className="font-semibold text-gray-900">Â£{getFoodPackageTotal(selectedBooking).toLocaleString()}</span>
                   </div>
 
                   {(() => {
@@ -5640,13 +5647,13 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       <div className="space-y-2 border-t border-gray-200 pt-3">
                         <div className="flex justify-between text-sm font-bold">
                           <span className="text-gray-800">Grand Total (incl. Hall)</span>
-                          <span className="text-gray-900">£{grandTotal.toLocaleString()}</span>
+                          <span className="text-gray-900">Â£{grandTotal.toLocaleString()}</span>
                         </div>
 
                         {selectedBooking.discount && (
                           <div className="flex justify-between text-xs text-red-650">
                             <span>Discount ({selectedBooking.discount.reason})</span>
-                            <span>-£{getDiscountAmount(selectedBooking).toLocaleString()}</span>
+                            <span>-Â£{getDiscountAmount(selectedBooking).toLocaleString()}</span>
                           </div>
                         )}
 
@@ -5684,7 +5691,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                               {!isEditingDeposit ? (
                                 <>
                                   <span className={`font-semibold ${isDepositPaid ? 'text-emerald-700' : 'text-amber-600'}`}>
-                                    £{selectedBooking.deposit.toLocaleString()} {isDepositPaid ? '✓ Paid' : '(pending)'}
+                                    Â£{selectedBooking.deposit.toLocaleString()} {isDepositPaid ? 'âœ“ Paid' : '(pending)'}
                                   </span>
                                   {isDepositPaid && selectedBooking.paymentMethodDeposit && (
                                     <span className="block text-[10px] text-gray-400 font-normal">
@@ -5694,7 +5701,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                 </>
                               ) : (
                                 <div className="flex items-center gap-1 mt-0.5">
-                                  <span className="text-xs text-gray-400">£</span>
+                                  <span className="text-xs text-gray-400">Â£</span>
                                   <input
                                     type="number"
                                     min="0"
@@ -5718,7 +5725,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                       try {
                                         await setDoc(doc(db, 'booking_requests', selectedBooking.id), updateData, { merge: true });
                                         await setDoc(doc(db, 'bookings', selectedBooking.id), updateData, { merge: true });
-                                        setCustomAlert({ message: `Deposit updated to £${newDep.toLocaleString()}`, type: 'success' });
+                                        setCustomAlert({ message: `Deposit updated to Â£${newDep.toLocaleString()}`, type: 'success' });
                                       } catch (err) {
                                         console.error('Error updating deposit:', err);
                                         setCustomAlert({ message: 'Failed to update deposit', type: 'error' });
@@ -5739,7 +5746,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                             <span className="text-gray-500">Final Payment (Main Balance)</span>
                             <div className="text-right">
                               <span className={`font-semibold ${isFinalPaid ? 'text-emerald-700' : 'text-amber-600'}`}>
-                                £{finalPaymentPaidAmt.toLocaleString()} {isFinalPaid ? '✓ Paid' : '(pending)'}
+                                Â£{finalPaymentPaidAmt.toLocaleString()} {isFinalPaid ? 'âœ“ Paid' : '(pending)'}
                               </span>
                               {isFinalPaid && selectedBooking.paymentMethodFinal && (
                                 <span className="block text-[10px] text-gray-400 font-normal">
@@ -5755,7 +5762,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                               <span className="text-gray-500">Extras / Adjustments</span>
                               <div className="text-right">
                                 <span className={`font-semibold ${isExtraPaid ? 'text-emerald-700' : 'text-amber-600'}`}>
-                                  £{extraChargesTotal.toLocaleString()} {isExtraPaid ? '✓ Paid' : '(pending)'}
+                                  Â£{extraChargesTotal.toLocaleString()} {isExtraPaid ? 'âœ“ Paid' : '(pending)'}
                                 </span>
                                 {isExtraPaid && selectedBooking.paymentMethodFinal && (
                                   <span className="block text-[10px] text-gray-400 font-normal">
@@ -5769,14 +5776,14 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           {/* Total Paid */}
                           <div className="flex justify-between text-xs border-t border-gray-100 pt-1.5 font-semibold text-gray-700">
                             <span>Total Paid</span>
-                            <span className="text-emerald-700 font-bold">£{totalPaid.toLocaleString()}</span>
+                            <span className="text-emerald-700 font-bold">Â£{totalPaid.toLocaleString()}</span>
                           </div>
 
                           {/* Remaining Balance Due */}
                           <div className="flex justify-between text-sm border-t border-gray-200 pt-1.5 font-bold">
                             <span className="text-gray-700">Remaining Balance Due</span>
                             <span className={remainingBalance <= 0 ? 'text-emerald-700' : 'text-amber-600'}>
-                              {remainingBalance <= 0 ? 'PAID IN FULL ✓' : `£${remainingBalance.toLocaleString()}`}
+                              {remainingBalance <= 0 ? 'PAID IN FULL âœ“' : `Â£${remainingBalance.toLocaleString()}`}
                             </span>
                           </div>
                         </div>
@@ -5852,7 +5859,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   {!selectedBooking.dueDate ? (
                     <div className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed">
                       <Icon name="LockClosedIcon" size={15} />
-                      Set Payment Due Date First ↑
+                      Set Payment Due Date First â†‘
                     </div>
                   ) : (
                     <button onClick={() => updateStatus(selectedBooking.id, 'final_invoice_sent')}
@@ -5901,7 +5908,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
               )}
               {selectedBooking.status === 'event_scheduled' && (
                 <div className="space-y-2">
-                  <a href={buildWhatsAppLink(selectedBooking.phone, `Hi ${selectedBooking.name.split(' ')[0]}, just a reminder — your ${selectedBooking.eventType} at Honeymoon is coming up on *${selectedBooking.date}* at ${selectedBooking.time}. We look forward to seeing you! 🎉`)}
+                  <a href={buildWhatsAppLink(selectedBooking.phone, `Hi ${selectedBooking.name.split(' ')[0]}, just a reminder â€” your ${selectedBooking.eventType} at Honeymoon is coming up on *${selectedBooking.date}* at ${selectedBooking.time}. We look forward to seeing you! ðŸŽ‰`)}
                     target="_blank" rel="noopener noreferrer"
                     className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl"
                     style={{ background: '#25D366', color: 'white' }}>
@@ -5926,7 +5933,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                       <div className="bg-red-50 p-4 rounded-xl border border-red-200 shadow-sm">
                         <div className="text-sm font-semibold text-red-800 mb-2 flex items-center gap-1.5">
                           <Icon name="ExclamationCircleIcon" size={16} />
-                          Extra Payment Required (£{extraChargesTotal.toLocaleString()})
+                          Extra Payment Required (Â£{extraChargesTotal.toLocaleString()})
                         </div>
                         <p className="text-xs text-red-700 mb-3 leading-relaxed">
                           Extra charges were added to this event. You must upload the payment screenshot for the remaining balance before closing the event.
@@ -5963,7 +5970,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                             <div className="flex flex-col gap-2 flex-1">
                               <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5">
                                 <Icon name="CheckCircleIcon" size={16} />
-                                Extra payment proof received — confirm below
+                                Extra payment proof received â€” confirm below
                               </div>
                               <div className="flex items-center">
                                 <input
@@ -6054,7 +6061,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
         </div>
       )}
 
-      {/* ─── CUSTOMER DETAIL DRAWER ─── */}
+      {/* â”€â”€â”€ CUSTOMER DETAIL DRAWER â”€â”€â”€ */}
       {selectedCustomer && (
         <div className="fixed inset-0 z-50 flex">
           <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={() => setSelectedCustomer(null)} />
@@ -6098,7 +6105,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   <div className="text-xs text-gray-500 mt-0.5">Total Bookings</div>
                 </div>
                 <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(200,134,10,0.08)' }}>
-                  <div className="text-2xl font-bold" style={{ color: '#C8860A' }}>{selectedCustomer.totalSpent > 0 ? `£${selectedCustomer.totalSpent.toLocaleString()}` : '—'}</div>
+                  <div className="text-2xl font-bold" style={{ color: '#C8860A' }}>{selectedCustomer.totalSpent > 0 ? `Â£${selectedCustomer.totalSpent.toLocaleString()}` : 'â€”'}</div>
                   <div className="text-xs text-gray-500 mt-0.5">Total Spent</div>
                 </div>
               </div>
@@ -6127,7 +6134,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
         </div>
       )}
 
-      {/* ─── DELETE CONFIRMATION MODAL ─── */}
+      {/* â”€â”€â”€ DELETE CONFIRMATION MODAL â”€â”€â”€ */}
       {bookingToDelete && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm border border-gray-100 flex flex-col items-center text-center animate-in fade-in zoom-in duration-200">
@@ -6154,7 +6161,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
         </div>
       )}
 
-      {/* ─── CUSTOM ALERT MODAL ─── */}
+      {/* â”€â”€â”€ CUSTOM ALERT MODAL â”€â”€â”€ */}
       {customAlert && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm border border-gray-100 flex flex-col items-center text-center">

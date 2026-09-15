@@ -72,6 +72,7 @@ export default function HomePage() {
         const data = docSnap.data();
         setPricingDetails({
           depositPercentage: data.depositPercentage !== undefined ? data.depositPercentage : 30,
+          minimumGuests: data.minimumGuests !== undefined ? data.minimumGuests : 30,
         });
       }
     });
@@ -138,9 +139,9 @@ export default function HomePage() {
     try {
       const fullPhone = bookingForm.phone ? `+44${bookingForm.phone.replace(/^0/, '').replace(/\s/g, '')}` : '';
       const guestCount = Number(bookingForm.guests) || 0;
-    if (guestCount < 30) {
+    if (guestCount < pricingDetails.minimumGuests) {
       setCustomHomeAlert({
-        message: "Minimum 30 guests required to submit a booking request.",
+        message: `Minimum ${pricingDetails.minimumGuests} guests required to submit a booking request.`,
         type: 'error'
       });
       setIsSubmitting(false);
@@ -192,11 +193,11 @@ export default function HomePage() {
     <div className="min-h-screen bg-white overflow-x-hidden">
       <Header onOpenModal={() => {}} />
 
-      {/* Hero — two-column layout */}
+      {/* Hero â€” two-column layout */}
       <section className="pt-24 pb-0 px-6" style={{ background: 'linear-gradient(135deg, #1A0F00 0%, #2C1A00 60%, #3D2800 100%)' }}>
         <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center gap-10 lg:gap-16 py-12">
 
-          {/* ── Left: Text content ── */}
+          {/* â”€â”€ Left: Text content â”€â”€ */}
           <div className="flex-1 text-center lg:text-left">
             <span className="inline-block text-xs font-semibold uppercase tracking-widest px-4 py-1.5 rounded-full mb-5" style={{ background: 'rgba(200,134,10,0.2)', color: '#F0A830' }}>
               Banquet &amp; Catering
@@ -218,7 +219,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* ── Right: Booking form card ── */}
+          {/* â”€â”€ Right: Booking form card â”€â”€ */}
           <div id="book" className="w-full lg:w-[480px] flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-2xl p-6 md:p-7">
               <h2 className="text-xl font-bold text-gray-900 text-center mb-1">Request a Booking</h2>
@@ -277,7 +278,7 @@ export default function HomePage() {
                   {/* Preferred Package */}
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1.5">
-                      <span style={{ color: '#C8860A' }}>🎁</span> Preferred Package
+                      <span style={{ color: '#C8860A' }}>ðŸŽ</span> Preferred Package
                       {bookingForm.selectedPackage && (
                         <span className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'rgba(200,134,10,0.12)', color: '#C8860A' }}>Auto-selected</span>
                       )}
@@ -288,23 +289,23 @@ export default function HomePage() {
                       className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500 bg-white"
                       style={bookingForm.selectedPackage ? { borderColor: '#C8860A', boxShadow: '0 0 0 1px rgba(200,134,10,0.3)' } : {}}
                     >
-                      <option value="">No specific package – help me choose</option>
-                      <optgroup label="── Buffet Packages ──">
+                      <option value="">No specific package â€“ help me choose</option>
+                      <optgroup label="â”€â”€ Buffet Packages â”€â”€">
                         {BANQUET_PACKAGES.map((pkg) => (
                           <option key={pkg.id} value={pkg.name}>
-                            {pkg.name} — £{pkg.pricePerPerson}/person
+                            {pkg.name} â€” Â£{pkg.pricePerPerson}/person
                           </option>
                         ))}
                       </optgroup>
-                      <optgroup label="── Venue & Hire ──">
+                      <optgroup label="â”€â”€ Venue & Hire â”€â”€">
                         <option value="Venue Hall">Venue Hall</option>
                         <option value="Dry Hire">Dry Hire</option>
                         <option value="Kids Pricing">Kids Pricing</option>
                       </optgroup>
-                      <optgroup label="── Extras ──">
+                      <optgroup label="â”€â”€ Extras â”€â”€">
                         {(LIVE_COUNTER_PACKAGE?.extras || []).map((extra, idx) => (
                           <option key={idx} value={extra.name}>
-                            {extra.name} — £{extra.price}
+                            {extra.name} â€” Â£{extra.price}
                           </option>
                         ))}
                       </optgroup>
@@ -332,18 +333,21 @@ export default function HomePage() {
                       <label className="block text-xs font-medium text-gray-700 mb-1">Time of Day *</label>
                       <select required value={bookingForm.timeOfDay} onChange={(e) => setBookingForm({ ...bookingForm, timeOfDay: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500 bg-white">
                         <option value="">Select time</option>
-                        <option value="Lunch (12:00pm – 4:00pm)">Lunch (12:00pm – 4:00pm)</option>
-                        <option value="Dinner (6:00pm – 11:30pm)">Dinner (6:00pm – 11:30pm)</option>
+                        <option value="Lunch (12:00pm â€“ 4:00pm)">Lunch (12:00pm â€“ 4:00pm)</option>
+                        <option value="Dinner (6:00pm â€“ 11:30pm)">Dinner (6:00pm â€“ 11:30pm)</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Guests *</label>
-                      <input type="number" required min={30} max={500} value={bookingForm.guests} onChange={(e) => setBookingForm({ ...bookingForm, guests: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500" placeholder="e.g. 30" />
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Guests * <span className="text-gray-400 font-normal">(Min {pricingDetails.minimumGuests}pax)</span></label>
+                      <input type="number" required min={pricingDetails.minimumGuests} max={500} value={bookingForm.guests} onChange={(e) => setBookingForm({ ...bookingForm, guests: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500" placeholder={`e.g. ${pricingDetails.minimumGuests}`} />
+                      {bookingForm.guests !== "" && Number(bookingForm.guests) < pricingDetails.minimumGuests && (
+                        <p className="text-red-500 text-xs mt-1 flex items-center gap-1"><span>⚠</span> Min {pricingDetails.minimumGuests}pax required</p>
+                      )}
                     </div>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">Additional Notes</label>
-                    <textarea rows={2} value={bookingForm.message} onChange={(e) => setBookingForm({ ...bookingForm, message: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500 resize-none" placeholder="Special requests, preferred menu, décor ideas..." />
+                    <textarea rows={2} value={bookingForm.message} onChange={(e) => setBookingForm({ ...bookingForm, message: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500 resize-none" placeholder="Special requests, preferred menu, dÃ©cor ideas..." />
                   </div>
                   <button type="submit" disabled={isSubmitting} className="w-full text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg disabled:opacity-70 cursor-pointer disabled:cursor-not-allowed" style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}>
                     {isSubmitting ? (
@@ -372,7 +376,7 @@ export default function HomePage() {
           {[
             { value: '500+', label: 'Events Hosted' },
             { value: '500', label: 'Guest Capacity' },
-            { value: '4.9★', label: 'Customer Rating' },
+            { value: '4.9â˜…', label: 'Customer Rating' },
           ].map((stat) => (
             <div key={stat.label}>
               <div className="text-2xl font-bold text-white">{stat.value}</div>
@@ -382,7 +386,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* ─── MENUS & PACKAGES SECTION ─── */}
+      {/* â”€â”€â”€ MENUS & PACKAGES SECTION â”€â”€â”€ */}
       <section id="menus" className="py-16 px-4 md:px-6" style={{ background: '#FAFAF8' }}>
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-10">
@@ -396,10 +400,10 @@ export default function HomePage() {
           {/* Tab Navigation */}
           <div className="flex flex-wrap gap-2 justify-center mb-8">
             {([
-              { id: 'packages', label: '🎁 Banquet Packages' },
-              { id: 'indian', label: '🍛 Indian Menu' },
-              { id: 'srilankan', label: '🌴 Sri Lankan Menu' },
-              { id: 'live', label: '🎪 Live Counter' },
+              { id: 'packages', label: 'ðŸŽ Banquet Packages' },
+              { id: 'indian', label: 'ðŸ› Indian Menu' },
+              { id: 'srilankan', label: 'ðŸŒ´ Sri Lankan Menu' },
+              { id: 'live', label: 'ðŸŽª Live Counter' },
             ] as { id: MenuTab; label: string }[]).map((tab) => (
               <button
                 key={tab.id}
@@ -412,7 +416,7 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* ─── BANQUET PACKAGES ─── */}
+          {/* â”€â”€â”€ BANQUET PACKAGES â”€â”€â”€ */}
           {activeMenuTab === 'packages' && (
             <div className="space-y-8">
               {/* Standard Setup */}
@@ -433,7 +437,7 @@ export default function HomePage() {
 
               {/* 5 Hour Event label */}
               <div className="text-center">
-                <span className="inline-block bg-gray-900 text-white text-xs font-semibold uppercase tracking-widest px-5 py-2 rounded-full">5 Hour Event — Buffet Packages (Excl. VAT)</span>
+                <span className="inline-block bg-gray-900 text-white text-xs font-semibold uppercase tracking-widest px-5 py-2 rounded-full">5 Hour Event â€” Buffet Packages (Excl. VAT)</span>
               </div>
 
               {/* Package Cards */}
@@ -450,23 +454,23 @@ export default function HomePage() {
                         </div>
                       )}
                       <h3 className="text-xl font-bold text-gray-900 mb-0.5">{pkg.name}</h3>
-                      <div className="text-3xl font-bold mb-1" style={{ color: pkg.color }}>£{pkg.pricePerPerson}<span className="text-base font-normal text-gray-500"> /person</span></div>
+                      <div className="text-3xl font-bold mb-1" style={{ color: pkg.color }}>Â£{pkg.pricePerPerson}<span className="text-base font-normal text-gray-500"> /person</span></div>
                       {pkg.guestLabel && <p className="text-xs text-gray-500 mb-3">{pkg.guestLabel}</p>}
 
                       <div className="space-y-3 mt-4">
                         {'canapes' in pkg && pkg.canapes && (
                           <div>
-                            <div className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">Canapés</div>
-                            <div className="text-sm text-gray-700">{pkg.canapes.veg} Vegetarian · {pkg.canapes.nonVeg} Non-vegetarian</div>
+                            <div className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">CanapÃ©s</div>
+                            <div className="text-sm text-gray-700">{pkg.canapes.veg} Vegetarian Â· {pkg.canapes.nonVeg} Non-vegetarian</div>
                           </div>
                         )}
                         <div>
                           <div className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">Starters</div>
-                          <div className="text-sm text-gray-700">{pkg.starters.veg} Vegetarian · {pkg.starters.nonVeg} Non-vegetarian</div>
+                          <div className="text-sm text-gray-700">{pkg.starters.veg} Vegetarian Â· {pkg.starters.nonVeg} Non-vegetarian</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">Mains</div>
-                          <div className="text-sm text-gray-700">{pkg.mains.veg} Vegetarian · {pkg.mains.nonVeg} Non-vegetarian</div>
+                          <div className="text-sm text-gray-700">{pkg.mains.veg} Vegetarian Â· {pkg.mains.nonVeg} Non-vegetarian</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">Desserts</div>
@@ -520,7 +524,7 @@ export default function HomePage() {
                       Enquire Now
                     </button>
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                      <p className="text-sm font-semibold text-amber-800 mb-1">🍷 ALCOHOL</p>
+                      <p className="text-sm font-semibold text-amber-800 mb-1">ðŸ· ALCOHOL</p>
                       <p className="text-sm text-amber-700">{TERMS_AND_CONDITIONS.alcohol}</p>
                     </div>
                   </div>
@@ -598,7 +602,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* ─── INDIAN MENU ─── */}
+          {/* â”€â”€â”€ INDIAN MENU â”€â”€â”€ */}
           {activeMenuTab === 'indian' && (
             <div className="space-y-6">
               <div className="text-center mb-6">
@@ -713,7 +717,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* ─── SRI LANKAN MENU ─── */}
+          {/* â”€â”€â”€ SRI LANKAN MENU â”€â”€â”€ */}
           {activeMenuTab === 'srilankan' && (
             <div className="space-y-6">
               <div className="text-center mb-6">
@@ -827,12 +831,12 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* ─── LIVE COUNTER PACKAGE ─── */}
+          {/* â”€â”€â”€ LIVE COUNTER PACKAGE â”€â”€â”€ */}
           {activeMenuTab === 'live' && (
             <div className="space-y-6">
               <div className="text-center mb-6">
                 <h3 className="text-2xl font-bold text-gray-900">Live Counter Package</h3>
-                <p className="text-sm text-gray-500 mt-1">Tick as per your Selected Package — Price per person</p>
+                <p className="text-sm text-gray-500 mt-1">Tick as per your Selected Package â€” Price per person</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -846,7 +850,7 @@ export default function HomePage() {
                           <span className="w-4 h-4 rounded border border-gray-300 flex-shrink-0 inline-block" />
                           {item.name}
                         </span>
-                        <span className="font-semibold" style={{ color: '#C8860A' }}>£{item.price.toFixed(2)}</span>
+                        <span className="font-semibold" style={{ color: '#C8860A' }}>Â£{item.price.toFixed(2)}</span>
                       </li>
                     ))}
                   </ul>
@@ -862,7 +866,7 @@ export default function HomePage() {
                           <span className="w-4 h-4 rounded border border-gray-300 flex-shrink-0 inline-block" />
                           {item.name}
                         </span>
-                        <span className="font-semibold" style={{ color: '#C8860A' }}>£{item.price.toFixed(2)}</span>
+                        <span className="font-semibold" style={{ color: '#C8860A' }}>Â£{item.price.toFixed(2)}</span>
                       </li>
                     ))}
                   </ul>
@@ -882,7 +886,7 @@ export default function HomePage() {
                           {'note' in item && item.note && <span className="block text-xs text-gray-400 italic">({item.note})</span>}
                         </span>
                       </span>
-                      <span className="font-semibold flex-shrink-0" style={{ color: '#C8860A' }}>£{item.price.toFixed(2)}</span>
+                      <span className="font-semibold flex-shrink-0" style={{ color: '#C8860A' }}>Â£{item.price.toFixed(2)}</span>
                     </li>
                   ))}
                 </ul>
@@ -906,7 +910,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ─── TERMS & CONDITIONS ─── */}
+      {/* â”€â”€â”€ TERMS & CONDITIONS â”€â”€â”€ */}
       <section id="terms" className="py-16 px-4 md:px-6 bg-white">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-10">
@@ -936,7 +940,7 @@ export default function HomePage() {
                     <ul className="space-y-2 mt-3">
                       {section.items.map((item, i) => (
                         <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                          <span className="text-amber-500 mt-0.5 flex-shrink-0">•</span>
+                          <span className="text-amber-500 mt-0.5 flex-shrink-0">â€¢</span>
                           {item}
                         </li>
                       ))}
@@ -957,7 +961,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ─── BOOKING FORM ─── */}
+      {/* â”€â”€â”€ BOOKING FORM â”€â”€â”€ */}
       <section id="book" className="py-16 px-6" style={{ background: '#FAFAF8' }}>
         <div className="max-w-2xl mx-auto">
           <h2 className="text-2xl font-bold text-gray-900 text-center mb-2">Request a Booking</h2>
@@ -1039,18 +1043,21 @@ export default function HomePage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Time of Day *</label>
                   <select required value={bookingForm.timeOfDay} onChange={(e) => setBookingForm({ ...bookingForm, timeOfDay: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500 bg-white">
                     <option value="">Select time</option>
-                    <option value="Lunch (12:00pm – 4:00pm)">Lunch (12:00pm – 4:00pm)</option>
-                    <option value="Dinner (6:00pm – 11:30pm)">Dinner (6:00pm – 11:30pm)</option>
+                    <option value="Lunch (12:00pm â€“ 4:00pm)">Lunch (12:00pm â€“ 4:00pm)</option>
+                    <option value="Dinner (6:00pm â€“ 11:30pm)">Dinner (6:00pm â€“ 11:30pm)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Number of Guests *</label>
-                  <input type="number" required min={30} max={500} value={bookingForm.guests} onChange={(e) => setBookingForm({ ...bookingForm, guests: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500" placeholder="e.g. 30" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Number of Guests * <span className="text-gray-400 font-normal text-xs">(Min {pricingDetails.minimumGuests}pax)</span></label>
+                  <input type="number" required min={pricingDetails.minimumGuests} max={500} value={bookingForm.guests} onChange={(e) => setBookingForm({ ...bookingForm, guests: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500" placeholder={`e.g. ${pricingDetails.minimumGuests}`} />
+                  {bookingForm.guests !== "" && Number(bookingForm.guests) < pricingDetails.minimumGuests && (
+                    <p className="text-red-500 text-sm mt-1 flex items-center gap-1"><span>⚠</span> Min {pricingDetails.minimumGuests}pax required</p>
+                  )}
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes</label>
-                <textarea rows={3} value={bookingForm.message} onChange={(e) => setBookingForm({ ...bookingForm, message: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500 resize-none" placeholder="Special requests, preferred menu, décor ideas..." />
+                <textarea rows={3} value={bookingForm.message} onChange={(e) => setBookingForm({ ...bookingForm, message: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-yellow-500 resize-none" placeholder="Special requests, preferred menu, dÃ©cor ideas..." />
               </div>
               <button type="submit" disabled={isSubmitting} className="w-full text-white font-semibold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg disabled:opacity-70 cursor-pointer disabled:cursor-not-allowed" style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}>
                 {isSubmitting ? (
@@ -1079,7 +1086,7 @@ export default function HomePage() {
       </div>
 
       <Footer />
-      {/* ─── CUSTOM ALERT MODAL ─── */}
+      {/* â”€â”€â”€ CUSTOM ALERT MODAL â”€â”€â”€ */}
       {customHomeAlert && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm border border-gray-100 flex flex-col items-center text-center">
