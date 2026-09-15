@@ -129,7 +129,7 @@ export default function ManualBookingForm({
   const [step1Errors, setStep1Errors] = useState<Record<string, string>>({});
 
   // ── Step 2: Menu & Package Selection ──
-  const [menuTab, setMenuTab] = useState<'packages' | 'indian' | 'srilankan' | 'live' | 'hall'>('packages');
+  const [menuTab, setMenuTab] = useState<'packages' | 'indian' | 'srilankan' | 'live' | 'hall' | 'extra_menu'>('packages');
   const [selectedPackageId, setSelectedPackageId] = useState<string>('silver');
   const [selectedPackageCustomPrice, setSelectedPackageCustomPrice] = useState<number | string>(35);
 
@@ -172,6 +172,17 @@ export default function ManualBookingForm({
     isCustomPrice?: boolean;
     reason?: string;
   }[]>([]);
+
+  // ── Extra Menu Items (custom food add-ons with cost) ──
+  const [extraMenuItems, setExtraMenuItems] = useState<{
+    id: string;
+    name: string;
+    description: string;
+    cost: number;
+  }[]>([]);
+  const [newExtraItemName, setNewExtraItemName] = useState('');
+  const [newExtraItemDescription, setNewExtraItemDescription] = useState('');
+  const [newExtraItemCost, setNewExtraItemCost] = useState('');
 
   // Selected Hall Hire (with price override)
   const [selectedHallOption, setSelectedHallOption] = useState<{
@@ -276,11 +287,12 @@ export default function ManualBookingForm({
   const kidsUnder4FoodTotal = Number(customerDetails.kidsUnder4 || 0) * effectiveKidsUnder4Price;
   const foodBaseAmount = adultFoodTotal + kidsFoodTotal + kidsUnder4FoodTotal;
 
-  // Live counters, extras, and hall totals
+  // Live counters, extras, hall, and extra menu items totals
   const liveCountersTotal = selectedLiveCounters.reduce((acc, item) => acc + Number(item.price || 0), 0);
   const extrasTotal = selectedExtras.reduce((acc, item) => acc + Number(item.price || 0), 0);
   const hallTotal = selectedHallOption ? Number(selectedHallOption.amount || 0) : 0;
-  const subtotalBeforeExtras = foodBaseAmount + hallTotal + liveCountersTotal + extrasTotal;
+  const extraMenuItemsTotal = extraMenuItems.reduce((acc, item) => acc + Number(item.cost || 0), 0);
+  const subtotalBeforeExtras = foodBaseAmount + hallTotal + liveCountersTotal + extrasTotal + extraMenuItemsTotal;
 
   // Extra charges total
   const extraChargesTotal = bookingExtraCharges.reduce((acc, item) => acc + Number(item.amount || 0), 0);
@@ -464,7 +476,7 @@ export default function ManualBookingForm({
     if (!customerDetails.phone.trim()) errors.phone = 'Phone number is required.';
     if (phoneError) errors.phone = phoneError;
     if (!customerDetails.date) errors.date = 'Event date is required.';
-    if (customerDetails.adults < 1) errors.adults = 'At least 1 adult guest required.';
+    if (Number(customerDetails.adults) < 1) errors.adults = 'At least 1 adult guest required.';
 
     setStep1Errors(errors);
     return Object.keys(errors).length === 0;
@@ -503,9 +515,9 @@ export default function ManualBookingForm({
       date: customerDetails.date,
       time: customerDetails.timeSession === 'custom' ? customerDetails.customTime : customerDetails.timeSession,
       guests: totalGuests,
-      adults: customerDetails.adults,
-      kids4to10: customerDetails.kids4to10,
-      kidsUnder4: customerDetails.kidsUnder4,
+      adults: Number(customerDetails.adults),
+      kids4to10: Number(customerDetails.kids4to10),
+      kidsUnder4: Number(customerDetails.kidsUnder4),
       package: currentPackage?.name || 'Custom Package',
       selectedMenu: currentPackage?.name || 'Custom Package',
       pricePerPerson: effectivePackagePrice,
@@ -560,6 +572,11 @@ export default function ManualBookingForm({
           amount: e.price,
           isPreset: true,
         })),
+        ...extraMenuItems.map((item) => ({
+          label: `Extra Menu: ${item.name}${item.description ? ` (${item.description})` : ''}`,
+          amount: item.cost,
+          isPreset: false,
+        })),
         ...bookingExtraCharges.map((c) => ({
           label: `${c.label}${c.reason ? ` (${c.reason})` : ''}`,
           amount: c.amount,
@@ -573,6 +590,11 @@ export default function ManualBookingForm({
         nonVegMains: selectedNonVegMains,
         sundries: selectedSundries,
         desserts: selectedDesserts,
+        extraMenuItems: extraMenuItems.map((item) => ({
+          name: item.name,
+          description: item.description,
+          cost: item.cost,
+        })),
       },
       enquiryDate: new Date().toISOString().split('T')[0],
       paymentMethodDeposit: paymentMethod,
@@ -754,6 +776,11 @@ export default function ManualBookingForm({
             amount: e.price,
             isPreset: true,
           })),
+          ...extraMenuItems.map((item) => ({
+            label: `Extra Menu: ${item.name}${item.description ? ` (${item.description})` : ''}`,
+            amount: item.cost,
+            isPreset: false,
+          })),
           ...bookingExtraCharges.map((c) => ({
             label: `${c.label}${c.reason ? ` (${c.reason})` : ''}`,
             amount: c.amount,
@@ -767,6 +794,11 @@ export default function ManualBookingForm({
           nonVegMains: selectedNonVegMains,
           sundries: selectedSundries,
           desserts: selectedDesserts,
+          extraMenuItems: extraMenuItems.map((item) => ({
+            name: item.name,
+            description: item.description,
+            cost: item.cost,
+          })),
         },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -849,6 +881,10 @@ export default function ManualBookingForm({
     setSelectedSundries([]);
     setSelectedDesserts([]);
     setSelectedHallOption(null);
+    setExtraMenuItems([]);
+    setNewExtraItemName('');
+    setNewExtraItemDescription('');
+    setNewExtraItemCost('');
     setShowHallPriceEditor(false);
     setBookingExtraCharges([]);
     setDiscountType('none');
@@ -1379,6 +1415,7 @@ export default function ManualBookingForm({
                 { id: 'srilankan', label: '3. Sri Lankan Menu', icon: 'GlobeAltIcon' },
                 { id: 'live', label: '4. Live Counters & Extras', icon: 'MusicalNoteIcon' },
                 { id: 'hall', label: '5. Venue Hall Hire', icon: 'BuildingOfficeIcon' },
+                { id: 'extra_menu', label: '6. Extra Menu Items', icon: 'PlusCircleIcon' },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -1387,6 +1424,8 @@ export default function ManualBookingForm({
                   className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                     menuTab === tab.id
                       ? 'text-white shadow-md'
+                      : tab.id === 'extra_menu'
+                      ? 'text-teal-700 hover:bg-teal-50 border border-teal-200 bg-teal-50/40'
                       : 'text-gray-600 hover:bg-gray-100'
                   }`}
                   style={
@@ -1397,6 +1436,11 @@ export default function ManualBookingForm({
                 >
                   <Icon name={tab.icon} size={15} />
                   {tab.label}
+                  {tab.id === 'extra_menu' && extraMenuItems.length > 0 && menuTab !== 'extra_menu' && (
+                    <span className="ml-1 text-[10px] font-bold bg-teal-600 text-white rounded-full px-1.5 py-0.5">
+                      {extraMenuItems.length}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -2328,6 +2372,145 @@ export default function ManualBookingForm({
                 </div>
               </div>
             )}
+
+            {/* TAB: EXTRA MENU ITEMS */}
+            {menuTab === 'extra_menu' && (
+              <div className="bg-white rounded-2xl border border-teal-200 p-5 shadow-sm space-y-5">
+                {/* Header */}
+                <div className="border-b border-teal-100 pb-3">
+                  <h4 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
+                    <Icon name="PlusCircleIcon" size={16} className="text-teal-600" />
+                    Extra Menu Items
+                  </h4>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Add any additional food items, special dishes, or custom menu extras not covered by the main packages. Each item can have a name, description, and cost.
+                  </p>
+                </div>
+
+                {/* Add New Item Form */}
+                <div className="bg-teal-50/50 border border-teal-200 rounded-xl p-4 space-y-3">
+                  <span className="text-[11px] font-bold text-teal-900 uppercase tracking-wide block">
+                    ✚ Add New Extra Menu Item
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-1">
+                      <label className="block text-[11px] font-semibold text-gray-700 mb-1">Item Name *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Prawn Cocktail, Extra Biryani"
+                        value={newExtraItemName}
+                        onChange={(e) => setNewExtraItemName(e.target.value)}
+                        className="w-full border border-teal-300 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+                      />
+                    </div>
+                    <div className="sm:col-span-1">
+                      <label className="block text-[11px] font-semibold text-gray-700 mb-1">Description / Note</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Served at table, halal, gluten-free"
+                        value={newExtraItemDescription}
+                        onChange={(e) => setNewExtraItemDescription(e.target.value)}
+                        className="w-full border border-teal-300 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-700 mb-1">Cost (£)</label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">£</span>
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="0.00"
+                            value={newExtraItemCost}
+                            onChange={(e) => setNewExtraItemCost(e.target.value)}
+                            className="w-full pl-6 pr-2 py-2 border border-teal-300 rounded-xl text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const name = newExtraItemName.trim();
+                            if (!name) return;
+                            const cost = parseFloat(newExtraItemCost) || 0;
+                            setExtraMenuItems((prev) => [
+                              ...prev,
+                              {
+                                id: Date.now().toString(),
+                                name,
+                                description: newExtraItemDescription.trim(),
+                                cost,
+                              },
+                            ]);
+                            setNewExtraItemName('');
+                            setNewExtraItemDescription('');
+                            setNewExtraItemCost('');
+                          }}
+                          disabled={!newExtraItemName.trim()}
+                          className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm whitespace-nowrap flex items-center gap-1"
+                        >
+                          <Icon name="PlusIcon" size={13} />
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Added Items List */}
+                {extraMenuItems.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <Icon name="ClipboardDocumentListIcon" size={32} className="mx-auto mb-2 opacity-30" />
+                    <p className="text-xs font-medium">No extra menu items added yet</p>
+                    <p className="text-[11px] mt-0.5">Use the form above to add custom food items</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wide">
+                        Added Items ({extraMenuItems.length})
+                      </span>
+                      <span className="text-xs font-bold text-teal-700">
+                        Total: £{extraMenuItemsTotal.toLocaleString()}
+                      </span>
+                    </div>
+                    {extraMenuItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between bg-teal-50/60 border border-teal-200 rounded-xl px-4 py-3 gap-3"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                            <span className="text-teal-500">🍽️</span>
+                            {item.name}
+                          </div>
+                          {item.description && (
+                            <div className="text-[10px] text-gray-500 mt-0.5 truncate">{item.description}</div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-bold text-teal-700 whitespace-nowrap">+£{item.cost.toLocaleString()}</span>
+                          <button
+                            type="button"
+                            onClick={() => setExtraMenuItems((prev) => prev.filter((i) => i.id !== item.id))}
+                            className="w-6 h-6 rounded-full bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center text-xs font-bold transition-colors"
+                            title="Remove item"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Total Banner */}
+                    <div className="flex justify-between items-center bg-gradient-to-r from-teal-100/80 to-teal-50 border border-teal-300 rounded-xl px-4 py-2.5 mt-1">
+                      <span className="text-xs font-bold text-teal-900">Extra Menu Items Subtotal:</span>
+                      <span className="text-base font-extrabold text-teal-700">£{extraMenuItemsTotal.toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Right Rail: Running Selection Summary */}
@@ -2362,13 +2545,13 @@ export default function ManualBookingForm({
                     )}
                   </span>
                 </div>
-                {customerDetails.kids4to10 > 0 && (
+                {Number(customerDetails.kids4to10) > 0 && (
                   <div className="flex justify-between items-center text-gray-500">
                     <span>Kids (4–10) Rate:</span>
                     <span className="font-semibold text-gray-800">£{effectiveKidsPrice} / kid</span>
                   </div>
                 )}
-                {customerDetails.kidsUnder4 > 0 && (
+                {Number(customerDetails.kidsUnder4) > 0 && (
                   <div className="flex justify-between items-center text-gray-500">
                     <span>Infants (Under 4):</span>
                     <span className="font-semibold text-emerald-700">{effectiveKidsUnder4Price > 0 ? `£${effectiveKidsUnder4Price} / infant` : 'Free'}</span>
@@ -2397,6 +2580,13 @@ export default function ManualBookingForm({
                   <div className="flex justify-between items-center text-purple-700 pt-1 border-t border-gray-100">
                     <span>✨ Event Extras ({selectedExtras.length}):</span>
                     <span className="font-semibold">+£{extrasTotal}</span>
+                  </div>
+                )}
+
+                {extraMenuItems.length > 0 && (
+                  <div className="flex justify-between items-center text-teal-700 pt-1 border-t border-gray-100">
+                    <span>🍽️ Extra Menu Items ({extraMenuItems.length}):</span>
+                    <span className="font-semibold">+£{extraMenuItemsTotal.toLocaleString()}</span>
                   </div>
                 )}
               </div>
@@ -3155,14 +3345,14 @@ export default function ManualBookingForm({
                   <span className="font-semibold">£{adultFoodTotal.toLocaleString()}</span>
                 </div>
 
-                {customerDetails.kids4to10 > 0 && (
+                {Number(customerDetails.kids4to10) > 0 && (
                   <div className="flex justify-between text-gray-600">
                     <span>Kids 4–10 ({customerDetails.kids4to10} × £{effectiveKidsPrice}):</span>
                     <span className="font-semibold">+£{kidsFoodTotal.toLocaleString()}</span>
                   </div>
                 )}
 
-                {customerDetails.kidsUnder4 > 0 && effectiveKidsUnder4Price > 0 && (
+                {Number(customerDetails.kidsUnder4) > 0 && effectiveKidsUnder4Price > 0 && (
                   <div className="flex justify-between text-gray-600">
                     <span>Infants ({customerDetails.kidsUnder4} × £{effectiveKidsUnder4Price}):</span>
                     <span className="font-semibold">+£{kidsUnder4FoodTotal.toLocaleString()}</span>
@@ -3187,6 +3377,13 @@ export default function ManualBookingForm({
                   <div className="flex justify-between text-purple-800">
                     <span>Event Extras ({selectedExtras.length}):</span>
                     <span className="font-semibold">+£{extrasTotal.toLocaleString()}</span>
+                  </div>
+                )}
+
+                {extraMenuItemsTotal > 0 && (
+                  <div className="flex justify-between text-teal-800">
+                    <span>Extra Menu Items ({extraMenuItems.length}):</span>
+                    <span className="font-semibold">+£{extraMenuItemsTotal.toLocaleString()}</span>
                   </div>
                 )}
 

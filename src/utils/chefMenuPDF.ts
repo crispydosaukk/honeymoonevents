@@ -22,6 +22,7 @@ export interface ChefMenuData {
     nonVegMains?: string[];
     sundries?: string[];
     desserts?: string[];
+    extraMenuItems?: { name: string; description?: string; cost?: number }[] | string[];
   };
   // Fallbacks if passed directly as arrays
   vegStarters?: string[];
@@ -30,6 +31,7 @@ export interface ChefMenuData {
   nonVegMains?: string[];
   sundries?: string[];
   desserts?: string[];
+  extraMenuItems?: { name: string; description?: string; cost?: number }[] | string[];
   liveCounters?: { name: string; price?: number }[] | string[];
   extras?: { name: string; price?: number }[] | string[];
 }
@@ -73,6 +75,17 @@ export function generateChefMenuPDF(data: ChefMenuData): void {
   // Extras extraction
   const extrasList: string[] = (data.extras || []).map((item) =>
     typeof item === 'string' ? item : item.name
+  );
+
+  // Extra menu items extraction
+  const extraMenuItemsList: string[] = (
+    data.selectedDishes?.extraMenuItems ||
+    data.extraMenuItems ||
+    []
+  ).map((item) =>
+    typeof item === 'string'
+      ? item
+      : `${item.name}${item.description ? ` (${item.description})` : ''}`
   );
 
   // Formatted dates
@@ -666,6 +679,17 @@ export function generateChefMenuPDF(data: ChefMenuData): void {
         ${renderDishColumn('Desserts', '🍮', desserts, 'badge-purple')}
       </div>
 
+      <!-- Extra / Custom Menu Items (if any) -->
+      ${
+        extraMenuItemsList.length > 0
+          ? `
+          <div class="dishes-grid" style="grid-template-columns: 1fr;">
+            ${renderDishColumn('Extra / Custom Menu Items', '🍽️', extraMenuItemsList, 'badge-green')}
+          </div>
+        `
+          : ''
+      }
+
       <!-- Live Counters & Extras (if any) -->
       ${
         liveCountersList.length > 0 || extrasList.length > 0
@@ -800,6 +824,12 @@ export function generateChefWhatsAppText(data: ChefMenuData): string {
   }
   if (desserts.length > 0) {
     msg += `🍮 *Desserts (${desserts.length}):*\n${desserts.map((d) => `• ${d}`).join('\n')}\n\n`;
+  }
+  const extraMenuItems = (data.selectedDishes?.extraMenuItems || data.extraMenuItems || []).map((item) =>
+    typeof item === 'string' ? item : `${item.name}${item.description ? ` (${item.description})` : ''}`
+  );
+  if (extraMenuItems.length > 0) {
+    msg += `🍽️ *Extra / Custom Menu Items (${extraMenuItems.length}):*\n${extraMenuItems.map((d) => `• ${d}`).join('\n')}\n\n`;
   }
   if (liveCounters.length > 0) {
     msg += `🎪 *Live Counters (${liveCounters.length}):*\n${liveCounters.map((d) => `• ${d}`).join('\n')}\n\n`;
