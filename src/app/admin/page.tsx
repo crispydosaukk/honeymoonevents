@@ -377,8 +377,39 @@ export default function AdminPage() {
   const [depositPaymentMethod, setDepositPaymentMethod] = useState<string>('');
   const [finalPaymentMethod, setFinalPaymentMethod] = useState<string>('');
 
-  useEffect(() => {
+  // Customer Inline Edit States
+  const [isEditingCustomerName, setIsEditingCustomerName] = useState(false);
+  const [isEditingCustomerPhone, setIsEditingCustomerPhone] = useState(false);
+  const [isEditingCustomerEmail, setIsEditingCustomerEmail] = useState(false);
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [editingBookingForManual, setEditingBookingForManual] = useState<Booking | null>(null);
+
+  // Month & Year Filter States across tabs
+  const [paymentFilterMonth, setPaymentFilterMonth] = useState<number | 'all'>('all');
+  const [paymentFilterYear, setPaymentFilterYear] = useState<number | 'all'>(new Date().getFullYear());
+  const [bookingsFilterMonth, setBookingsFilterMonth] = useState<number | 'all'>('all');
+  const [bookingsFilterYear, setBookingsFilterYear] = useState<number | 'all'>(new Date().getFullYear());
+  const [enquiriesFilterMonth, setEnquiriesFilterMonth] = useState<number | 'all'>('all');
+  const [enquiriesFilterYear, setEnquiriesFilterYear] = useState<number | 'all'>(new Date().getFullYear());
+  const [historyFilterMonth, setHistoryFilterMonth] = useState<number | 'all'>('all');
+  const [historyFilterYear, setHistoryFilterYear] = useState<number | 'all'>(new Date().getFullYear());
+
+  const resetAllEditStates = () => {
     setIsEditingDeposit(false);
+    setIsEditingCustomerName(false);
+    setIsEditingCustomerPhone(false);
+    setIsEditingCustomerEmail(false);
+    setIsEditingNotes(false);
+    setIsEditingBookingDate(false);
+    setIsEditingEventType(false);
+    setIsEditingPackage(false);
+    setIsEditingTime(false);
+    setIsEditingGuests(false);
+    setIsEditingDueDate(false);
+  };
+
+  useEffect(() => {
+    resetAllEditStates();
     if (selectedBooking) {
       setDepositPaymentMethod(selectedBooking.paymentMethodDeposit || '');
       setFinalPaymentMethod(selectedBooking.paymentMethodFinal || '');
@@ -1034,6 +1065,16 @@ Once you have completed the transfer, please send us a screenshot of the payment
     if (idx > 0) {
       const prevStatus = STATUS_FLOW[idx - 1];
       await updateStatus(id, prevStatus);
+    }
+  };
+
+  const handleGoForwardStatus = async (id: string) => {
+    const currentBooking = bookings.find(b => b.id === id);
+    if (!currentBooking) return;
+    const idx = STATUS_FLOW.indexOf(currentBooking.status);
+    if (idx < STATUS_FLOW.length - 1) {
+      const nextStatus = STATUS_FLOW[idx + 1];
+      await updateStatus(id, nextStatus);
     }
   };
 
@@ -2056,7 +2097,17 @@ Once you have completed the transfer, please send us a screenshot of the payment
     printWindow.document.close();
   };
 
-  const enquiries = bookings.filter(b => b.status === 'new_enquiry');
+  const enquiries = bookings.filter(b => {
+    if (b.status !== 'new_enquiry') return false;
+    if (enquiriesFilterMonth === 'all' && enquiriesFilterYear === 'all') return true;
+    const targetDate = b.date || b.enquiryDate;
+    if (!targetDate) return true;
+    const d = new Date(targetDate);
+    if (isNaN(d.getTime())) return true;
+    const monthMatch = enquiriesFilterMonth === 'all' || d.getMonth() === enquiriesFilterMonth;
+    const yearMatch = enquiriesFilterYear === 'all' || d.getFullYear() === enquiriesFilterYear;
+    return monthMatch && yearMatch;
+  });
   const activeBookings = bookings.filter(b => b.status !== 'new_enquiry' && b.status !== 'completed');
   const completedBookings = bookings.filter(b => b.status === 'completed').sort((a, b) => {
     const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : new Date(a.date).getTime());
@@ -2066,7 +2117,15 @@ Once you have completed the transfer, please send us a screenshot of the payment
 
   const historyBookings = bookings.filter(b => {
     const statusIndex = STATUS_FLOW.indexOf(b.status);
-    return statusIndex >= STATUS_FLOW.indexOf('deposit_confirmed');
+    if (statusIndex < STATUS_FLOW.indexOf('deposit_confirmed')) return false;
+    if (historyFilterMonth === 'all' && historyFilterYear === 'all') return true;
+    const targetDate = b.date || b.enquiryDate;
+    if (!targetDate) return true;
+    const d = new Date(targetDate);
+    if (isNaN(d.getTime())) return true;
+    const monthMatch = historyFilterMonth === 'all' || d.getMonth() === historyFilterMonth;
+    const yearMatch = historyFilterYear === 'all' || d.getFullYear() === historyFilterYear;
+    return monthMatch && yearMatch;
   }).sort((a, b) => {
     const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : new Date(a.date).getTime());
     const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : new Date(b.date).getTime());
@@ -2127,12 +2186,42 @@ Once you have completed the transfer, please send us a screenshot of the payment
     outstanding: bookings.filter(b => b.depositPaid && !b.finalPaymentPaid && b.status !== 'new_enquiry').reduce((s, b) => s + (getTotalAmount(b) - b.deposit), 0),
   };
 
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    const currentYear = new Date().getFullYear();
+    years.add(currentYear);
+    years.add(currentYear - 1);
+    years.add(currentYear + 1);
+    bookings.forEach(b => {
+      if (b.date) {
+        const y = new Date(b.date).getFullYear();
+        if (!isNaN(y)) years.add(y);
+      }
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [bookings]);
+
   const eventTypes = [...new Set(bookings.map(b => b.eventType))];
 
   const filtered = bookings.filter(b => {
     const statusMatch = filterStatus === 'all' || (filterStatus === 'event_completed' ? (b.status === 'event_completed' || b.status === 'completed') : b.status === filterStatus);
     const eventMatch = filterEvent === 'all' || b.eventType === filterEvent;
-    return statusMatch && eventMatch;
+    let monthMatch = true;
+    let yearMatch = true;
+    if (bookingsFilterMonth !== 'all' || bookingsFilterYear !== 'all') {
+      if (b.date) {
+        const d = new Date(b.date);
+        if (bookingsFilterMonth !== 'all' && !isNaN(d.getTime())) {
+          monthMatch = d.getMonth() === bookingsFilterMonth;
+        }
+        if (bookingsFilterYear !== 'all' && !isNaN(d.getTime())) {
+          yearMatch = d.getFullYear() === bookingsFilterYear;
+        }
+      } else {
+        monthMatch = false;
+      }
+    }
+    return statusMatch && eventMatch && monthMatch && yearMatch;
   });
 
   const daysInMonth = getDaysInMonth(calendarYear, calendarMonth);
@@ -2439,8 +2528,39 @@ Once you have completed the transfer, please send us a screenshot of the payment
           {/* ─── ENQUIRIES ─── */}
           {activeTab === 'enquiries' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-500">{enquiries.length} new enquiries awaiting your response</p>
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-xl border border-gray-200">
+                <p className="text-sm font-medium text-gray-700">{enquiries.length} new enquiries {enquiriesFilterMonth !== 'all' ? `in ${MONTHS[enquiriesFilterMonth]}` : 'awaiting your response'}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 font-medium">Filter Month:</span>
+                  <select
+                    value={enquiriesFilterMonth}
+                    onChange={(e) => setEnquiriesFilterMonth(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                    className="bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 font-medium focus:outline-none"
+                  >
+                    <option value="all">All Months</option>
+                    {MONTHS.map((m, idx) => (
+                      <option key={m} value={idx}>{m}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={enquiriesFilterYear}
+                    onChange={(e) => setEnquiriesFilterYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                    className="bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 font-medium focus:outline-none"
+                  >
+                    <option value="all">All Years</option>
+                    {availableYears.map(yr => (
+                      <option key={yr} value={yr}>{yr}</option>
+                    ))}
+                  </select>
+                  {(enquiriesFilterMonth !== 'all' || enquiriesFilterYear !== 'all') && (
+                    <button
+                      onClick={() => { setEnquiriesFilterMonth('all'); setEnquiriesFilterYear('all'); }}
+                      className="text-xs text-amber-700 hover:text-amber-900 font-semibold px-2 py-1 bg-amber-50 rounded-lg border border-amber-200"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               </div>
               {enquiries.length === 0 && (
                 <div className="bg-white rounded-xl border border-gray-200 py-16 text-center">
@@ -2547,6 +2667,34 @@ Once you have completed the transfer, please send us a screenshot of the payment
                     <option value="all">All Event Types</option>
                     {eventTypes.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
+                  <select
+                    value={bookingsFilterMonth}
+                    onChange={(e) => setBookingsFilterMonth(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                    className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 font-medium focus:outline-none"
+                  >
+                    <option value="all">All Months</option>
+                    {MONTHS.map((m, idx) => (
+                      <option key={m} value={idx}>{m}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={bookingsFilterYear}
+                    onChange={(e) => setBookingsFilterYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                    className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 font-medium focus:outline-none"
+                  >
+                    <option value="all">All Years</option>
+                    {availableYears.map(yr => (
+                      <option key={yr} value={yr}>{yr}</option>
+                    ))}
+                  </select>
+                  {(bookingsFilterMonth !== 'all' || bookingsFilterYear !== 'all') && (
+                    <button
+                      onClick={() => { setBookingsFilterMonth('all'); setBookingsFilterYear('all'); }}
+                      className="text-xs text-amber-700 hover:text-amber-900 font-semibold px-2 py-1.5 bg-amber-50 rounded-lg border border-amber-200 transition-colors"
+                    >
+                      Clear Date Filter
+                    </button>
+                  )}
                 </div>
 
                 <button
@@ -2683,7 +2831,18 @@ Once you have completed the transfer, please send us a screenshot of the payment
 
                             {/* Actions */}
                             <td className="px-4 py-3.5">
-                              <div className="flex items-center gap-2.5">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setEditingBookingForManual(booking);
+                                    setActiveTab('manual_booking');
+                                  }}
+                                  className="text-xs font-semibold flex items-center gap-1 hover:text-amber-800 text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 shadow-2xs transition-colors"
+                                  title="Amend Booking in Full Wizard"
+                                >
+                                  <Icon name="PencilIcon" size={11} />
+                                  <span>Amend</span>
+                                </button>
                                 <button onClick={() => setSelectedBooking(booking)} className="text-xs font-semibold flex items-center gap-1 hover:underline whitespace-nowrap" style={{ color: '#C8860A' }}>
                                   Manage <Icon name="ChevronRightIcon" size={12} />
                                 </button>
@@ -2778,6 +2937,17 @@ Once you have completed the transfer, please send us a screenshot of the payment
               }}
               venueHallCharges={editableVenueCharges}
               kidsPricing={editableKidsPricing}
+              editingBooking={editingBookingForManual}
+              onBookingUpdated={(updated) => {
+                setBookings(prev => prev.map(b => b.id === updated.id ? { ...b, ...updated } : b));
+                setSelectedBooking(updated);
+                setEditingBookingForManual(null);
+                setCustomAlert({ message: `Booking #${updated.id} amended successfully!`, type: 'success' });
+              }}
+              onCancelEdit={() => {
+                setEditingBookingForManual(null);
+                setActiveTab('bookings');
+              }}
               onBookingCreated={(newId) => {
                 const found = bookings.find(b => b.id === newId);
                 if (found) setSelectedBooking(found);
@@ -2939,118 +3109,255 @@ Once you have completed the transfer, please send us a screenshot of the payment
           )}
 
           {/* ─── PAYMENTS ─── */}
-          {activeTab === 'payments' && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {[
-                  { label: 'Deposits Collected', value: `£${stats.depositsCollected.toLocaleString()}`, icon: 'BanknotesIcon', color: 'text-emerald-600', bg: 'bg-emerald-50', sub: 'Confirmed deposits' },
-                  { label: 'Outstanding Balance', value: `£${stats.outstanding.toLocaleString()}`, icon: 'ClockIcon', color: 'text-amber-600', bg: 'bg-amber-50', sub: 'Remaining to collect' },
-                  { label: 'Total Revenue', value: `£${stats.revenue.toLocaleString()}`, icon: 'CurrencyDollarIcon', color: 'text-yellow-700', bg: 'bg-yellow-50', sub: 'Completed bookings' },
-                ].map((s) => (
-                  <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className={`${s.bg} w-10 h-10 rounded-xl flex items-center justify-center mb-3`}>
-                      <Icon name={s.icon as 'BanknotesIcon'} size={20} className={s.color} />
+          {activeTab === 'payments' && (() => {
+            const paymentBookings = bookings.filter((b) => {
+              if (b.status === 'new_enquiry') return false;
+              if (paymentFilterMonth === 'all' && paymentFilterYear === 'all') return true;
+              const targetDate = b.date || b.dueDate || b.enquiryDate;
+              if (!targetDate) return true;
+              const d = new Date(targetDate);
+              if (isNaN(d.getTime())) return true;
+              const monthMatch = paymentFilterMonth === 'all' || d.getMonth() === paymentFilterMonth;
+              const yearMatch = paymentFilterYear === 'all' || d.getFullYear() === paymentFilterYear;
+              return monthMatch && yearMatch;
+            });
+
+            const paymentStats = (() => {
+              let depositsCollected = 0;
+              let outstanding = 0;
+              let revenue = 0;
+
+              paymentBookings.forEach((b) => {
+                const total = getTotalAmount(b);
+                const extraChargesTotal = (b.extraCharges || []).reduce((s, c) => s + c.amount, 0);
+                const isDepositPaid = b.depositPaid || !['new_enquiry', 'menu_sent', 'menu_selected', 'deposit_pending'].includes(b.status);
+                const isFinalPaid = b.finalPaymentPaid || b.status === 'completed';
+                const isExtraPaid = b.status === 'completed' || !!b.paymentProofExtra || b.finalPaymentPaid;
+
+                const depositAmt = b.deposit || (pricingDetails.depositPercentage || 500);
+                const finalPaymentAmt = Math.max(0, total - depositAmt - extraChargesTotal);
+                const totalPaid = (isDepositPaid ? depositAmt : 0) +
+                                  (isFinalPaid ? finalPaymentAmt : 0) +
+                                  (isExtraPaid ? extraChargesTotal : 0);
+                const balanceDue = isFinalPaid ? 0 : Math.max(0, total - totalPaid);
+
+                if (isDepositPaid) depositsCollected += depositAmt;
+                outstanding += balanceDue;
+                if (b.status === 'completed' || isFinalPaid) {
+                  revenue += total;
+                }
+              });
+
+              return { depositsCollected, outstanding, revenue };
+            })();
+
+            return (
+              <div className="space-y-5">
+                {/* Payment Month & Year Filter Toolbar */}
+                <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 mr-1">
+                      <Icon name="CalendarDaysIcon" size={16} className="text-[#C8860A]" />
+                      <span>Filter Payments:</span>
                     </div>
-                    <div className="text-2xl font-bold text-gray-900">{s.value}</div>
-                    <div className="text-xs font-medium text-gray-500 mt-0.5">{s.label}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">{s.sub}</div>
+                    <select
+                      value={paymentFilterMonth}
+                      onChange={(e) => setPaymentFilterMonth(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                      className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-800 font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="all">All Months</option>
+                      {MONTHS.map((m, idx) => (
+                        <option key={m} value={idx}>{m}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={paymentFilterYear}
+                      onChange={(e) => setPaymentFilterYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                      className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-800 font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="all">All Years</option>
+                      {availableYears.map(yr => (
+                        <option key={yr} value={yr}>{yr}</option>
+                      ))}
+                    </select>
+                    <div className="flex items-center gap-1 ml-1 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const now = new Date();
+                          setPaymentFilterMonth(now.getMonth());
+                          setPaymentFilterYear(now.getFullYear());
+                        }}
+                        className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 transition-colors"
+                      >
+                        This Month
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (paymentFilterMonth === 'all') {
+                            setPaymentFilterMonth(new Date().getMonth() === 0 ? 11 : new Date().getMonth() - 1);
+                          } else {
+                            setPaymentFilterMonth(m => (m as number) === 0 ? 11 : (m as number) - 1);
+                          }
+                        }}
+                        className="px-2.5 py-1 text-xs font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                        title="Previous Month"
+                      >
+                        ← Prev Month
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (paymentFilterMonth === 'all') {
+                            setPaymentFilterMonth(new Date().getMonth() === 11 ? 0 : new Date().getMonth() + 1);
+                          } else {
+                            setPaymentFilterMonth(m => (m as number) === 11 ? 0 : (m as number) + 1);
+                          }
+                        }}
+                        className="px-2.5 py-1 text-xs font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                        title="Next Month"
+                      >
+                        Next Month →
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPaymentFilterMonth('all');
+                          setPaymentFilterYear('all');
+                        }}
+                        className="px-2.5 py-1 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                      >
+                        All Time
+                      </button>
+                    </div>
                   </div>
-                ))}
-              </div>
 
-              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="px-5 py-4 border-b border-gray-100">
-                  <h3 className="font-semibold text-gray-900 text-sm">Payment Tracker</h3>
+                  <div className="text-xs text-gray-500 font-medium">
+                    Showing: <span className="font-bold text-gray-800">
+                      {paymentFilterMonth !== 'all' ? MONTHS[paymentFilterMonth] : 'All Months'} {paymentFilterYear !== 'all' ? paymentFilterYear : ''}
+                    </span> ({paymentBookings.length} records)
+                  </div>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[700px]">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Customer</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Event</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Amount</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Discount</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Deposit Paid</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Balance Due</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Deposit Proof</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Final Proof</th>
-                        <th className="px-4 py-3"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {bookings.filter(b => b.status !== 'new_enquiry').map((b) => {
-                        const total = getTotalAmount(b);
-                        const extraChargesTotal = (b.extraCharges || []).reduce((s, c) => s + c.amount, 0);
-                        const isDepositPaid = b.depositPaid || !['new_enquiry', 'menu_sent', 'menu_selected', 'deposit_pending'].includes(b.status);
-                        const isFinalPaid = b.finalPaymentPaid || b.status === 'completed';
-                        const isExtraPaid = b.status === 'completed' || !!b.paymentProofExtra || b.finalPaymentPaid;
 
-                        const depositAmt = b.deposit || (pricingDetails.depositPercentage || 500);
-                        const finalPaymentAmt = Math.max(0, total - depositAmt - extraChargesTotal);
-                        const totalPaid = (isDepositPaid ? depositAmt : 0) +
-                                          (isFinalPaid ? finalPaymentAmt : 0) +
-                                          (isExtraPaid ? extraChargesTotal : 0);
-                        const balanceDue = isFinalPaid ? 0 : Math.max(0, total - totalPaid);
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {[
+                    { label: 'Deposits Collected', value: `£${paymentStats.depositsCollected.toLocaleString()}`, icon: 'BanknotesIcon', color: 'text-emerald-600', bg: 'bg-emerald-50', sub: paymentFilterMonth !== 'all' ? `${MONTHS[paymentFilterMonth]} deposits` : 'Confirmed deposits' },
+                    { label: 'Outstanding Balance', value: `£${paymentStats.outstanding.toLocaleString()}`, icon: 'ClockIcon', color: 'text-amber-600', bg: 'bg-amber-50', sub: paymentFilterMonth !== 'all' ? `${MONTHS[paymentFilterMonth]} pending balance` : 'Remaining to collect' },
+                    { label: 'Total Revenue', value: `£${paymentStats.revenue.toLocaleString()}`, icon: 'CurrencyDollarIcon', color: 'text-yellow-700', bg: 'bg-yellow-50', sub: paymentFilterMonth !== 'all' ? `${MONTHS[paymentFilterMonth]} closed revenue` : 'Completed bookings' },
+                  ].map((s) => (
+                    <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-4 shadow-2xs">
+                      <div className={`${s.bg} w-10 h-10 rounded-xl flex items-center justify-center mb-3`}>
+                        <Icon name={s.icon as 'BanknotesIcon'} size={20} className={s.color} />
+                      </div>
+                      <div className="text-2xl font-bold text-gray-900">{s.value}</div>
+                      <div className="text-xs font-medium text-gray-500 mt-0.5">{s.label}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">{s.sub}</div>
+                    </div>
+                  ))}
+                </div>
 
-                        return (
-                          <tr key={b.id} className="hover:bg-gray-50/80 transition-colors">
-                            <td className="px-4 py-3.5">
-                              <div className="font-medium text-gray-900 text-sm">{b.name}</div>
-                              <div className="text-xs text-gray-400">{b.id}</div>
-                            </td>
-                            <td className="px-4 py-3.5">
-                              <div className="text-sm text-gray-700">{b.eventType}</div>
-                              <div className="text-xs text-gray-400">{b.date}</div>
-                            </td>
-                            <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">£{total.toLocaleString()}</td>
-                            <td className="px-4 py-3.5">
-                              {b.discount ? (
-                                <div className="text-sm font-semibold text-red-600">-£{getDiscountAmount(b).toLocaleString()}</div>
-                              ) : (
-                                <div className="text-sm text-gray-400">—</div>
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5">
-                              <div className={`text-sm font-medium ${isDepositPaid ? 'text-emerald-700' : 'text-amber-600'}`}>£{depositAmt.toLocaleString()}</div>
-                              <div className="text-xs text-gray-400">{isDepositPaid ? '✓ Paid' : 'Pending'}</div>
-                            </td>
-                            <td className="px-4 py-3.5">
-                              {isFinalPaid || balanceDue <= 0 ? (
-                                <span className="text-sm text-emerald-600 font-semibold">Paid in full</span>
-                              ) : (
-                                <span className="text-sm font-semibold text-amber-700">£{balanceDue.toLocaleString()}</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5">
-                              {b.paymentProofDeposit ? (
-                                <span className="inline-flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">
-                                  <Icon name="CheckCircleIcon" size={12} /> Received
-                                </span>
-                              ) : (
-                                <span className="text-xs text-gray-400">Awaiting</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5">
-                              {b.paymentProofFinal ? (
-                                <span className="inline-flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">
-                                  <Icon name="CheckCircleIcon" size={12} /> Received
-                                </span>
-                              ) : (
-                                <span className="text-xs text-gray-400">Awaiting</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5">
-                              <button onClick={() => setSelectedBooking(b)} className="text-xs font-semibold hover:underline" style={{ color: '#C8860A' }}>Manage</button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <h3 className="font-semibold text-gray-900 text-sm">Payment Tracker</h3>
+                    <span className="text-xs text-gray-400 font-medium">{paymentBookings.length} booking payments listed</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm min-w-[700px]">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Customer</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Event</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Amount</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Discount</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Deposit Paid</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Balance Due</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Deposit Proof</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Final Proof</th>
+                          <th className="px-4 py-3"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {paymentBookings.map((b) => {
+                          const total = getTotalAmount(b);
+                          const extraChargesTotal = (b.extraCharges || []).reduce((s, c) => s + c.amount, 0);
+                          const isDepositPaid = b.depositPaid || !['new_enquiry', 'menu_sent', 'menu_selected', 'deposit_pending'].includes(b.status);
+                          const isFinalPaid = b.finalPaymentPaid || b.status === 'completed';
+                          const isExtraPaid = b.status === 'completed' || !!b.paymentProofExtra || b.finalPaymentPaid;
+
+                          const depositAmt = b.deposit || (pricingDetails.depositPercentage || 500);
+                          const finalPaymentAmt = Math.max(0, total - depositAmt - extraChargesTotal);
+                          const totalPaid = (isDepositPaid ? depositAmt : 0) +
+                                            (isFinalPaid ? finalPaymentAmt : 0) +
+                                            (isExtraPaid ? extraChargesTotal : 0);
+                          const balanceDue = isFinalPaid ? 0 : Math.max(0, total - totalPaid);
+
+                          return (
+                            <tr key={b.id} className="hover:bg-gray-50/80 transition-colors">
+                              <td className="px-4 py-3.5">
+                                <div className="font-medium text-gray-900 text-sm">{b.name}</div>
+                                <div className="text-xs text-gray-400">{b.id}</div>
+                              </td>
+                              <td className="px-4 py-3.5">
+                                <div className="text-sm text-gray-700">{b.eventType}</div>
+                                <div className="text-xs text-gray-400">{b.date}</div>
+                              </td>
+                              <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">£{total.toLocaleString()}</td>
+                              <td className="px-4 py-3.5">
+                                {b.discount ? (
+                                  <div className="text-sm font-semibold text-red-600">-£{getDiscountAmount(b).toLocaleString()}</div>
+                                ) : (
+                                  <div className="text-sm text-gray-400">—</div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3.5">
+                                <div className={`text-sm font-medium ${isDepositPaid ? 'text-emerald-700' : 'text-amber-600'}`}>£{depositAmt.toLocaleString()}</div>
+                                <div className="text-xs text-gray-400">{isDepositPaid ? '✓ Paid' : 'Pending'}</div>
+                              </td>
+                              <td className="px-4 py-3.5">
+                                {isFinalPaid || balanceDue <= 0 ? (
+                                  <span className="text-sm text-emerald-600 font-semibold">Paid in full</span>
+                                ) : (
+                                  <span className="text-sm font-semibold text-amber-700">£{balanceDue.toLocaleString()}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3.5">
+                                {b.paymentProofDeposit ? (
+                                  <span className="inline-flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">
+                                    <Icon name="CheckCircleIcon" size={12} /> Received
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-gray-400">Awaiting</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3.5">
+                                {b.paymentProofFinal ? (
+                                  <span className="inline-flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">
+                                    <Icon name="CheckCircleIcon" size={12} /> Received
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-gray-400">Awaiting</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3.5">
+                                <button onClick={() => setSelectedBooking(b)} className="text-xs font-semibold hover:underline" style={{ color: '#C8860A' }}>Manage</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {paymentBookings.length === 0 && (
+                      <div className="text-center py-12 text-gray-400 text-sm">
+                        <Icon name="CreditCardIcon" size={32} className="mx-auto mb-2 text-gray-300" />
+                        No payments found for the selected month/year.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ─── MENUS ─── */}
           {activeTab === 'menus' && (
@@ -3493,12 +3800,45 @@ Once you have completed the transfer, please send us a screenshot of the payment
           {/* ─── HISTORY ─── */}
           {activeTab === 'history' && (
             <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="relative flex-1 max-w-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-xl border border-gray-200">
+                <div className="relative flex-1 min-w-[240px] max-w-sm">
                   <Icon name="MagnifyingGlassIcon" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input type="text" placeholder="Search history..." value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none bg-white" />
                 </div>
-                <span className="text-xs text-gray-400">{historyBookings.length} records</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-gray-500 font-medium">Filter Month:</span>
+                  <select
+                    value={historyFilterMonth}
+                    onChange={(e) => setHistoryFilterMonth(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                    className="bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 font-medium focus:outline-none"
+                  >
+                    <option value="all">All Months</option>
+                    {MONTHS.map((m, idx) => (
+                      <option key={m} value={idx}>{m}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={historyFilterYear}
+                    onChange={(e) => setHistoryFilterYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                    className="bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 font-medium focus:outline-none"
+                  >
+                    <option value="all">All Years</option>
+                    {availableYears.map(yr => (
+                      <option key={yr} value={yr}>{yr}</option>
+                    ))}
+                  </select>
+                  {(historyFilterMonth !== 'all' || historyFilterYear !== 'all') && (
+                    <button
+                      onClick={() => { setHistoryFilterMonth('all'); setHistoryFilterYear('all'); }}
+                      className="text-xs text-amber-700 hover:text-amber-900 font-semibold px-2 py-1 bg-amber-50 rounded-lg border border-amber-200"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <span className="text-xs text-gray-400 font-medium ml-1">
+                    {historyBookings.length} {historyFilterMonth !== 'all' ? `in ${MONTHS[historyFilterMonth]}` : 'records'}
+                  </span>
+                </div>
               </div>
               {historyBookings.filter(b => !historySearch || b.name.toLowerCase().includes(historySearch.toLowerCase()) || b.email.toLowerCase().includes(historySearch.toLowerCase()) || b.phone.toLowerCase().includes(historySearch.toLowerCase()) || b.eventType.toLowerCase().includes(historySearch.toLowerCase())).map((b) => (
                 <div key={b.id} className="bg-white rounded-xl border border-gray-200 p-5">
@@ -3518,6 +3858,24 @@ Once you have completed the transfer, please send us a screenshot of the payment
                         {STATUS_LABELS[b.status]}
                       </span>
                       <div className="flex gap-1.5 flex-wrap">
+                        {/* 0. Amend in Wizard */}
+                        <button
+                          onClick={() => { setEditingBookingForManual(b); setActiveTab('manual_booking'); }}
+                          className="text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-amber-200 shadow-2xs"
+                          title="Amend booking in 4-step wizard"
+                        >
+                          <Icon name="PencilSquareIcon" size={13} className="text-[#C8860A]" />
+                          Amend
+                        </button>
+                        {/* Open Drawer */}
+                        <button
+                          onClick={() => setSelectedBooking(b)}
+                          className="text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold shadow-2xs"
+                          title="Open Details & Workflow Drawer"
+                        >
+                          <Icon name="EyeIcon" size={13} />
+                          Details
+                        </button>
                         {/* 1. Menu PDF for Chef */}
                         <button
                           onClick={() => generateChefMenuPDF(b)}
@@ -4063,16 +4421,60 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   
                   return (
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      <div className="bg-gray-50 rounded-xl p-5 border border-gray-100 flex items-center justify-between shadow-sm">
+                      <div className="bg-gray-50 rounded-xl p-5 border border-gray-100 flex flex-wrap items-center justify-between gap-4 shadow-sm">
                         <div>
                           <div className="font-bold text-gray-900 text-lg">{tb.name}</div>
                           <div className="text-sm font-medium text-gray-500 mt-1 flex items-center gap-2">
                             <Icon name="CalendarIcon" size={14} /> {tb.eventType} on {tb.date}
                           </div>
                         </div>
-                        <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide border shadow-sm ${STATUS_COLORS[tb.status]}`}>
-                          {STATUS_LABELS[tb.status]}
-                        </span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            onClick={() => handleGoBackStatus(tb.id)}
+                            disabled={currentStepIdx === 0}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-1 transition-all ${currentStepIdx === 0 ? 'bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed' : 'bg-white hover:bg-amber-50 text-amber-800 border-amber-300 shadow-2xs'}`}
+                            title="Move back to previous status"
+                          >
+                            <Icon name="ArrowLeftIcon" size={13} />
+                            Previous
+                          </button>
+                          <select
+                            value={tb.status}
+                            onChange={(e) => updateStatus(tb.id, e.target.value as BookingStatus)}
+                            className="bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                          >
+                            {STATUS_FLOW.map((s, i) => (
+                              <option key={s} value={s}>
+                                {i + 1}. {STATUS_LABELS[s]}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => handleGoForwardStatus(tb.id)}
+                            disabled={currentStepIdx === STATUS_FLOW.length - 1}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-1 transition-all ${currentStepIdx === STATUS_FLOW.length - 1 ? 'bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed' : 'bg-white hover:bg-amber-50 text-amber-800 border-amber-300 shadow-2xs'}`}
+                            title="Move forward to next status"
+                          >
+                            Next
+                            <Icon name="ArrowRightIcon" size={13} />
+                          </button>
+                          <button
+                            onClick={() => { setEditingBookingForManual(tb); setActiveTab('manual_booking'); }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white flex items-center gap-1 shadow-2xs transition-colors"
+                            title="Amend in 4-step wizard"
+                          >
+                            <Icon name="PencilSquareIcon" size={13} />
+                            Amend in Wizard
+                          </button>
+                          <button
+                            onClick={() => setSelectedBooking(tb)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-200 hover:bg-gray-300 text-gray-800 flex items-center gap-1 transition-colors"
+                            title="Open drawer details"
+                          >
+                            <Icon name="EyeIcon" size={13} />
+                            Details
+                          </button>
+                        </div>
                       </div>
                       
                       <div className="relative border-l-2 border-gray-200 ml-5 pl-8 space-y-8 mt-8 pb-4">
@@ -4084,13 +4486,28 @@ Once you have completed the transfer, please send us a screenshot of the payment
                           return (
                             <div key={step} className="relative">
                               {/* Timeline dot */}
-                              <div className={`absolute -left-[41px] top-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${isCompleted ? 'bg-emerald-500 border-emerald-500 shadow-md scale-110' : isCurrent ? 'bg-amber-500 border-amber-500 shadow-md ring-4 ring-amber-100 scale-125' : 'bg-white border-gray-300'}`}>
+                              <div
+                                onClick={() => updateStatus(tb.id, step)}
+                                className={`absolute -left-[41px] top-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-300 cursor-pointer ${isCompleted ? 'bg-emerald-500 border-emerald-500 shadow-md scale-110 hover:ring-2 hover:ring-emerald-200' : isCurrent ? 'bg-amber-500 border-amber-500 shadow-md ring-4 ring-amber-100 scale-125' : 'bg-white border-gray-300 hover:border-amber-400'}`}
+                                title={`Click to set stage to ${STATUS_LABELS[step]}`}
+                              >
                                 {isCompleted && <Icon name="CheckIcon" size={12} className="text-white" />}
                                 {isCurrent && <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />}
                               </div>
                               
-                              <div className={`font-bold text-sm ${isPastOrCurrent ? 'text-gray-900' : 'text-gray-400'}`}>
-                                Step {idx + 1}: {STATUS_LABELS[step]}
+                              <div className="flex items-center justify-between gap-3 flex-wrap">
+                                <div className={`font-bold text-sm ${isPastOrCurrent ? 'text-gray-900' : 'text-gray-400'}`}>
+                                  Step {idx + 1}: {STATUS_LABELS[step]}
+                                </div>
+                                {!isCurrent && (
+                                  <button
+                                    onClick={() => updateStatus(tb.id, step)}
+                                    className="text-[11px] font-semibold px-2 py-0.5 rounded-md border border-gray-200 hover:border-amber-400 bg-white hover:bg-amber-50 text-gray-600 hover:text-amber-800 transition-colors shadow-2xs"
+                                    title={`Move status directly to ${STATUS_LABELS[step]}`}
+                                  >
+                                    Jump to this Stage
+                                  </button>
+                                )}
                               </div>
                               
                               {/* Details if reached this step */}
@@ -4180,34 +4597,74 @@ Once you have completed the transfer, please send us a screenshot of the payment
           <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={() => { setSelectedBooking(null); setShowMenuPanel(false); setIsEditingBookingDate(false); setIsEditingEventType(false); setIsEditingPackage(false); setIsEditingTime(false); setIsEditingGuests(false); }} />
           <div className="w-full max-w-lg bg-white shadow-2xl flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
-              <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0 bg-white">
+              <div className="flex items-center gap-2">
                 {/* Back Arrow button to go one step back in workflow status */}
-                {STATUS_FLOW.indexOf(selectedBooking.status) > 0 && STATUS_FLOW.indexOf(selectedBooking.status) <= 3 && (
-                  <button onClick={() => handleGoBackStatus(selectedBooking.id)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700 transition-colors" title="Go one step back">
-                    <Icon name="ArrowLeftIcon" size={20} />
-                  </button>
-                )}
+                <button
+                  onClick={() => handleGoBackStatus(selectedBooking.id)}
+                  disabled={STATUS_FLOW.indexOf(selectedBooking.status) === 0}
+                  className={`p-1.5 rounded-lg transition-colors ${STATUS_FLOW.indexOf(selectedBooking.status) === 0 ? 'text-gray-200 cursor-not-allowed' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}
+                  title="Move back to previous status"
+                >
+                  <Icon name="ArrowLeftIcon" size={18} />
+                </button>
+                {/* Forward Arrow button to go one step forward in workflow status */}
+                <button
+                  onClick={() => handleGoForwardStatus(selectedBooking.id)}
+                  disabled={STATUS_FLOW.indexOf(selectedBooking.status) === STATUS_FLOW.length - 1}
+                  className={`p-1.5 rounded-lg transition-colors ${STATUS_FLOW.indexOf(selectedBooking.status) === STATUS_FLOW.length - 1 ? 'text-gray-200 cursor-not-allowed' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}
+                  title="Move forward to next status"
+                >
+                  <Icon name="ArrowRightIcon" size={18} />
+                </button>
                 <div>
-                  <h2 className="font-semibold text-gray-900">Booking #{selectedBooking.id}</h2>
+                  <h2 className="font-semibold text-gray-900 text-sm sm:text-base">Booking #{selectedBooking.id}</h2>
                   <p className="text-xs text-gray-400">{selectedBooking.eventType} · {selectedBooking.date}</p>
                 </div>
               </div>
-              <button onClick={() => { setSelectedBooking(null); setShowMenuPanel(false); setIsEditingBookingDate(false); setIsEditingEventType(false); setIsEditingPackage(false); setIsEditingTime(false); setIsEditingGuests(false); }} className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors">
-                <Icon name="XMarkIcon" size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setEditingBookingForManual(selectedBooking);
+                    setSelectedBooking(null);
+                    setActiveTab('manual_booking');
+                  }}
+                  className="text-xs text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 shadow-2xs transition-colors"
+                  title="Amend in 4-step wizard"
+                >
+                  <Icon name="PencilSquareIcon" size={13} className="text-[#C8860A]" />
+                  <span>Amend in Wizard</span>
+                </button>
+                <button onClick={() => { setSelectedBooking(null); setShowMenuPanel(false); resetAllEditStates(); }} className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors">
+                  <Icon name="XMarkIcon" size={20} />
+                </button>
+              </div>
             </div>
 
-            {/* Status badge + progress */}
-            <div className="px-5 py-3 border-b border-gray-100 flex-shrink-0">
-              <div className="flex items-center justify-between mb-2">
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${STATUS_COLORS[selectedBooking.status]}`}>
-                  <span className={`w-2 h-2 rounded-full ${STATUS_DOT[selectedBooking.status]}`} />
-                  {STATUS_LABELS[selectedBooking.status]}
-                </span>
-                <span className="text-xs text-gray-400">Step {STATUS_FLOW.indexOf(selectedBooking.status) + 1} of {STATUS_FLOW.length}</span>
+            {/* Status badge + progress + quick stage jump */}
+            <div className="px-5 py-3 border-b border-gray-100 flex-shrink-0 bg-gray-50/70">
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[selectedBooking.status]}`}>
+                    <span className={`w-2 h-2 rounded-full ${STATUS_DOT[selectedBooking.status]}`} />
+                    {STATUS_LABELS[selectedBooking.status]}
+                  </span>
+                  <select
+                    value={selectedBooking.status}
+                    onChange={(e) => updateStatus(selectedBooking.id, e.target.value as BookingStatus)}
+                    className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                    title="Jump directly to any workflow stage"
+                  >
+                    {STATUS_FLOW.map((s, idx) => (
+                      <option key={s} value={s}>
+                        {idx + 1}. {STATUS_LABELS[s]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <span className="text-xs text-gray-400 font-medium">Step {STATUS_FLOW.indexOf(selectedBooking.status) + 1} of {STATUS_FLOW.length}</span>
               </div>
-              <div className="w-full bg-gray-100 rounded-full h-1.5">
+              <div className="w-full bg-gray-200 rounded-full h-1.5">
                 <div className="h-1.5 rounded-full transition-all duration-500" style={{ width: `${((STATUS_FLOW.indexOf(selectedBooking.status) + 1) / STATUS_FLOW.length) * 100}%`, background: 'linear-gradient(90deg, #C8860A, #F0A830)' }} />
               </div>
             </div>
@@ -4278,19 +4735,101 @@ Once you have completed the transfer, please send us a screenshot of the payment
 
               {/* Customer info */}
               <div className="bg-gray-50 rounded-xl p-4">
-                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Customer</div>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'rgba(200,134,10,0.1)' }}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Customer Details</span>
+                  <div className="flex items-center gap-2">
+                    {!(isEditingCustomerName || isEditingCustomerEmail || isEditingCustomerPhone) ? (
+                      <button
+                        onClick={() => {
+                          setIsEditingCustomerName(true);
+                          setIsEditingCustomerEmail(true);
+                          setIsEditingCustomerPhone(true);
+                        }}
+                        className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
+                      >
+                        <Icon name="PencilIcon" size={10} />
+                        Edit
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setIsEditingCustomerName(false);
+                          setIsEditingCustomerEmail(false);
+                          setIsEditingCustomerPhone(false);
+                        }}
+                        className="text-[10px] text-gray-400 hover:text-gray-600 font-medium"
+                      >
+                        Done
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: 'rgba(200,134,10,0.1)' }}>
                     <span className="text-base font-bold" style={{ color: '#C8860A' }}>{selectedBooking.name.charAt(0)}</span>
                   </div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-gray-900">{selectedBooking.name}</div>
-                    <div className="text-sm text-gray-500">{selectedBooking.email}</div>
-                    <div className="text-sm text-gray-500">{selectedBooking.phone}</div>
+                  <div className="flex-1 space-y-1.5">
+                    {!isEditingCustomerName ? (
+                      <div className="font-semibold text-gray-900">{selectedBooking.name}</div>
+                    ) : (
+                      <input
+                        type="text"
+                        defaultValue={selectedBooking.name}
+                        onBlur={async (e) => {
+                          const val = e.target.value.trim();
+                          if (!val || val === selectedBooking.name) return;
+                          const updated = { ...selectedBooking, name: val };
+                          setSelectedBooking(updated);
+                          setBookings(prev => prev.map(b => b.id === selectedBooking.id ? { ...b, name: val } : b));
+                          await setDoc(doc(db, 'booking_requests', selectedBooking.id), { name: val }, { merge: true });
+                          await setDoc(doc(db, 'bookings', selectedBooking.id), { name: val }, { merge: true });
+                        }}
+                        className="w-full border border-amber-300 rounded px-2 py-1 text-xs font-semibold bg-white text-gray-900 focus:outline-none"
+                        placeholder="Full Name"
+                      />
+                    )}
+                    {!isEditingCustomerEmail ? (
+                      <div className="text-sm text-gray-500">{selectedBooking.email}</div>
+                    ) : (
+                      <input
+                        type="email"
+                        defaultValue={selectedBooking.email}
+                        onBlur={async (e) => {
+                          const val = e.target.value.trim();
+                          if (!val || val === selectedBooking.email) return;
+                          const updated = { ...selectedBooking, email: val };
+                          setSelectedBooking(updated);
+                          setBookings(prev => prev.map(b => b.id === selectedBooking.id ? { ...b, email: val } : b));
+                          await setDoc(doc(db, 'booking_requests', selectedBooking.id), { email: val }, { merge: true });
+                          await setDoc(doc(db, 'bookings', selectedBooking.id), { email: val }, { merge: true });
+                        }}
+                        className="w-full border border-amber-300 rounded px-2 py-1 text-xs bg-white text-gray-700 focus:outline-none"
+                        placeholder="Email Address"
+                      />
+                    )}
+                    {!isEditingCustomerPhone ? (
+                      <div className="text-sm text-gray-500">{selectedBooking.phone}</div>
+                    ) : (
+                      <input
+                        type="tel"
+                        defaultValue={selectedBooking.phone}
+                        onBlur={async (e) => {
+                          const val = e.target.value.trim();
+                          if (!val || val === selectedBooking.phone) return;
+                          const updated = { ...selectedBooking, phone: val };
+                          setSelectedBooking(updated);
+                          setBookings(prev => prev.map(b => b.id === selectedBooking.id ? { ...b, phone: val } : b));
+                          await setDoc(doc(db, 'booking_requests', selectedBooking.id), { phone: val }, { merge: true });
+                          await setDoc(doc(db, 'bookings', selectedBooking.id), { phone: val }, { merge: true });
+                        }}
+                        className="w-full border border-amber-300 rounded px-2 py-1 text-xs bg-white text-gray-700 focus:outline-none"
+                        placeholder="Phone Number"
+                      />
+                    )}
                   </div>
                   <a href={buildWhatsAppLink(selectedBooking.phone, `Hi ${selectedBooking.name.split(' ')[0]}, this is Honeymoon regarding your ${selectedBooking.eventType} booking.`)}
                     target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg"
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg flex-shrink-0"
                     style={{ background: '#25D366', color: 'white' }}>
                     <Icon name="ChatBubbleLeftRightIcon" size={14} />
                     WhatsApp
@@ -4304,15 +4843,13 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   <div className="bg-gray-50 rounded-xl p-3 flex flex-col justify-between">
                     <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 flex items-center justify-between">
                       <span>Event Type</span>
-                      {!selectedBooking.depositPaid && !['event_completed', 'final_invoice_sent', 'final_payment_received', 'completed'].includes(selectedBooking.status) && (
-                        <button
-                          onClick={() => setIsEditingEventType(true)}
-                          className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
-                        >
-                          <Icon name="PencilIcon" size={10} />
-                          Edit
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setIsEditingEventType(true)}
+                        className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
+                      >
+                        <Icon name="PencilIcon" size={10} />
+                        Edit
+                      </button>
                     </div>
                     <div className="text-sm font-medium text-gray-900">{selectedBooking.eventType}</div>
                   </div>
@@ -4358,15 +4895,13 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   <div className="bg-gray-50 rounded-xl p-3 flex flex-col justify-between">
                     <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 flex items-center justify-between">
                       <span>Package</span>
-                      {!selectedBooking.depositPaid && !['event_completed', 'final_invoice_sent', 'final_payment_received', 'completed'].includes(selectedBooking.status) && (
-                        <button
-                          onClick={() => setIsEditingPackage(true)}
-                          className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
-                        >
-                          <Icon name="PencilIcon" size={10} />
-                          Edit
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setIsEditingPackage(true)}
+                        className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
+                      >
+                        <Icon name="PencilIcon" size={10} />
+                        Edit
+                      </button>
                     </div>
                     <div className="text-sm font-medium text-gray-900 truncate" title={selectedBooking.selectedMenu || selectedBooking.package}>
                       {selectedBooking.selectedMenu || selectedBooking.package}
@@ -4415,15 +4950,13 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   <div className="bg-gray-50 rounded-xl p-3 flex flex-col justify-between">
                     <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 flex items-center justify-between">
                       <span>Date</span>
-                      {!selectedBooking.depositPaid && !['event_completed', 'final_invoice_sent', 'final_payment_received', 'completed'].includes(selectedBooking.status) && (
-                        <button
-                          onClick={() => setIsEditingBookingDate(true)}
-                          className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
-                        >
-                          <Icon name="PencilIcon" size={10} />
-                          Edit
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setIsEditingBookingDate(true)}
+                        className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
+                      >
+                        <Icon name="PencilIcon" size={10} />
+                        Edit
+                      </button>
                     </div>
                     <div className="text-sm font-medium text-gray-900">
                       {selectedBooking.date ? selectedBooking.date.split('T')[0] : 'N/A'}
@@ -4467,15 +5000,13 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   <div className="bg-gray-50 rounded-xl p-3 flex flex-col justify-between">
                     <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 flex items-center justify-between">
                       <span>Time / Shift</span>
-                      {!selectedBooking.depositPaid && !['event_completed', 'final_invoice_sent', 'final_payment_received', 'completed'].includes(selectedBooking.status) && (
-                        <button
-                          onClick={() => setIsEditingTime(true)}
-                          className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
-                        >
-                          <Icon name="PencilIcon" size={10} />
-                          Edit
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setIsEditingTime(true)}
+                        className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
+                      >
+                        <Icon name="PencilIcon" size={10} />
+                        Edit
+                      </button>
                     </div>
                     <div className="text-sm font-medium text-gray-900">{selectedBooking.time}</div>
                   </div>
@@ -4519,15 +5050,13 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   <div className="bg-gray-50 rounded-xl p-3 flex flex-col justify-between">
                     <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 flex items-center justify-between">
                       <span>Guests</span>
-                      {!selectedBooking.depositPaid && !(selectedBooking.selectedMenu || selectedBooking.package) && !['event_completed', 'final_invoice_sent', 'final_payment_received', 'completed'].includes(selectedBooking.status) && (
-                        <button
-                          onClick={() => setIsEditingGuests(true)}
-                          className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
-                        >
-                          <Icon name="PencilIcon" size={10} />
-                          Edit
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setIsEditingGuests(true)}
+                        className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
+                      >
+                        <Icon name="PencilIcon" size={10} />
+                        Edit
+                      </button>
                     </div>
                     <div className="text-sm font-medium text-gray-900">{selectedBooking.guests} people</div>
                   </div>
@@ -4584,70 +5113,70 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   <div className="text-sm font-medium text-gray-900">{selectedBooking.enquiryDate}</div>
                 </div>
 
-                {['deposit_confirmed', 'event_scheduled', 'event_completed', 'final_invoice_sent', 'final_payment_received', 'completed'].includes(selectedBooking.status) && (
-                  !isEditingDueDate ? (
-                    <div className="bg-gray-50 rounded-xl p-3 flex flex-col justify-between border border-amber-100">
-                      <div className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-1 flex items-center justify-between">
-                        <span>Payment Due Date</span>
-                        {!selectedBooking.depositPaid && !['event_completed', 'final_invoice_sent', 'final_payment_received', 'completed'].includes(selectedBooking.status) && (
-                          <button
-                            onClick={() => setIsEditingDueDate(true)}
-                            className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
-                          >
-                            <Icon name="PencilIcon" size={10} />
-                            Edit
-                          </button>
-                        )}
-                      </div>
-                      <div className="text-sm font-bold text-amber-900">
-                        {selectedBooking.dueDate ? selectedBooking.dueDate : 'Not Set'}
-                      </div>
+                {!isEditingDueDate ? (
+                  <div className="bg-gray-50 rounded-xl p-3 flex flex-col justify-between border border-amber-100">
+                    <div className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-1 flex items-center justify-between">
+                      <span>Payment Due Date</span>
+                      <button
+                        onClick={() => setIsEditingDueDate(true)}
+                        className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
+                      >
+                        <Icon name="PencilIcon" size={10} />
+                        Edit
+                      </button>
                     </div>
-                  ) : (
-                    <div className="bg-amber-50 rounded-xl p-3 flex flex-col justify-between border border-amber-400">
-                      <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1 flex items-center justify-between">
-                        <span>Payment Due Date</span>
-                        <button
-                          onClick={() => setIsEditingDueDate(false)}
-                          className="text-[10px] text-gray-500 hover:text-gray-700 font-medium transition-colors"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                      <input
-                        type="date"
-                        defaultValue={selectedBooking.dueDate || ''}
-                        onChange={async (e) => {
-                          const newDate = e.target.value;
-                          if (!newDate) return;
-                          try {
-                            const updatedBooking = { ...selectedBooking, dueDate: newDate };
-                            setSelectedBooking(updatedBooking);
-                            setBookings(prev => prev.map(b => b.id === selectedBooking.id ? { ...b, dueDate: newDate } : b));
+                    <div className="text-sm font-bold text-amber-900">
+                      {selectedBooking.dueDate ? selectedBooking.dueDate : 'Not Set'}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 rounded-xl p-3 flex flex-col justify-between border border-amber-400">
+                    <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1 flex items-center justify-between">
+                      <span>Payment Due Date</span>
+                      <button
+                        onClick={() => setIsEditingDueDate(false)}
+                        className="text-[10px] text-gray-500 hover:text-gray-700 font-medium transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <input
+                      type="date"
+                      defaultValue={selectedBooking.dueDate || ''}
+                      onChange={async (e) => {
+                        const newDate = e.target.value;
+                        if (!newDate) return;
+                        try {
+                          const updatedBooking = { ...selectedBooking, dueDate: newDate };
+                          setSelectedBooking(updatedBooking);
+                          setBookings(prev => prev.map(b => b.id === selectedBooking.id ? { ...b, dueDate: newDate } : b));
 
-                            await setDoc(doc(db, 'booking_requests', selectedBooking.id), { dueDate: newDate }, { merge: true });
-                            await setDoc(doc(db, 'bookings', selectedBooking.id), { dueDate: newDate }, { merge: true });
-                            setIsEditingDueDate(false);
-                          } catch (error) {
-                            console.error('Error updating due date:', error);
-                          }
-                        }}
-                        className="w-full border border-amber-300 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold text-amber-900 mt-1"
-                      />
-                    </div>
-                  )
+                          await setDoc(doc(db, 'booking_requests', selectedBooking.id), { dueDate: newDate }, { merge: true });
+                          await setDoc(doc(db, 'bookings', selectedBooking.id), { dueDate: newDate }, { merge: true });
+                          setIsEditingDueDate(false);
+                        } catch (error) {
+                          console.error('Error updating due date:', error);
+                        }
+                      }}
+                      className="w-full border border-amber-300 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold text-amber-900 mt-1"
+                    />
+                  </div>
                 )}
               </div>
 
               {/* ── STEP-SPECIFIC PANELS ── */}
 
-              {/* Select Package Block */}
-              {(selectedBooking.status === 'menu_sent' || selectedBooking.status === 'menu_selected') && (
-                <div className="border border-amber-200 rounded-xl p-4 bg-amber-50/50">
-                  <div className="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+              {/* Select Package Block - Always enabled for admins to amend */}
+              <div className="border border-amber-200 rounded-xl p-4 bg-amber-50/50">
+                <div className="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-3 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
                     <Icon name="ClipboardDocumentListIcon" size={14} style={{ color: '#C8860A' }} />
-                    Select Package Chosen by Customer
-                  </div>
+                    Package, Extras &amp; Guest Count Selection
+                  </span>
+                  <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold border border-amber-200">
+                    Editable Anytime
+                  </span>
+                </div>
                   <div className="space-y-3">
                     <div>
                       <label className="block text-xs font-semibold text-gray-500 mb-1">Select Banquet Package</label>
@@ -4966,7 +5495,6 @@ Once you have completed the transfer, please send us a screenshot of the payment
                     )}
                   </div>
                 </div>
-              )}
 
               {/* Step: Menu Sent — show real menu packages */}
               {(selectedBooking.status === 'menu_sent' || showMenuPanel) && selectedBooking.status !== 'menu_selected' && selectedBooking.status !== 'deposit_pending' && selectedBooking.status !== 'deposit_confirmed' && selectedBooking.status !== 'event_scheduled' && selectedBooking.status !== 'event_completed' && selectedBooking.status !== 'final_invoice_sent' && selectedBooking.status !== 'final_payment_received' && selectedBooking.status !== 'completed' && (
@@ -5849,16 +6377,97 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 </div>
               </div>
 
-              {selectedBooking.notes && (
-                <div>
-                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Notes</div>
-                  <div className="text-sm text-gray-600 bg-gray-50 rounded-xl p-4 leading-relaxed">{selectedBooking.notes}</div>
+              {/* Special Requests / Notes */}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Special Requests &amp; Notes</span>
+                  {!isEditingNotes ? (
+                    <button
+                      onClick={() => setIsEditingNotes(true)}
+                      className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold transition-colors flex items-center gap-0.5"
+                    >
+                      <Icon name="PencilIcon" size={10} />
+                      Edit Notes
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setIsEditingNotes(false)}
+                      className="text-[10px] text-gray-400 hover:text-gray-600 font-medium"
+                    >
+                      Done
+                    </button>
+                  )}
                 </div>
-              )}
+                {!isEditingNotes ? (
+                  <div className="text-sm text-gray-700 leading-relaxed italic bg-white p-3 rounded-lg border border-gray-100">
+                    {selectedBooking.notes ? selectedBooking.notes : 'No special requests or notes added yet.'}
+                  </div>
+                ) : (
+                  <textarea
+                    defaultValue={selectedBooking.notes || ''}
+                    rows={3}
+                    onBlur={async (e) => {
+                      const val = e.target.value.trim();
+                      const updated = { ...selectedBooking, notes: val };
+                      setSelectedBooking(updated);
+                      setBookings(prev => prev.map(b => b.id === selectedBooking.id ? { ...b, notes: val } : b));
+                      await setDoc(doc(db, 'booking_requests', selectedBooking.id), { notes: val }, { merge: true });
+                      await setDoc(doc(db, 'bookings', selectedBooking.id), { notes: val }, { merge: true });
+                    }}
+                    className="w-full border border-amber-300 rounded-lg p-2.5 text-xs text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-inner"
+                    placeholder="Enter special requests, notes, dietary requirements..."
+                  />
+                )}
+              </div>
             </div>
 
             {/* Action footer */}
-            <div className="p-5 border-t border-gray-200 flex-shrink-0 space-y-2">
+            <div className="p-5 border-t border-gray-200 flex-shrink-0 space-y-3 bg-gray-50/50">
+              {/* Quick Stage Controls */}
+              <div className="flex items-center justify-between gap-2 p-2 bg-white rounded-xl border border-gray-200 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => handleGoBackStatus(selectedBooking.id)}
+                  disabled={STATUS_FLOW.indexOf(selectedBooking.status) === 0}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-all ${
+                    STATUS_FLOW.indexOf(selectedBooking.status) === 0
+                      ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'
+                      : 'bg-white hover:bg-amber-50 text-amber-800 border-amber-300 shadow-2xs'
+                  }`}
+                  title="Move booking back to previous stage"
+                >
+                  <Icon name="ArrowLeftIcon" size={13} />
+                  <span>Prev Stage</span>
+                </button>
+
+                <select
+                  value={selectedBooking.status}
+                  onChange={(e) => updateStatus(selectedBooking.id, e.target.value as BookingStatus)}
+                  className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  title="Jump directly to any workflow stage"
+                >
+                  {STATUS_FLOW.map((s, idx) => (
+                    <option key={s} value={s}>
+                      {idx + 1}. {STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => handleGoForwardStatus(selectedBooking.id)}
+                  disabled={STATUS_FLOW.indexOf(selectedBooking.status) === STATUS_FLOW.length - 1}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-all ${
+                    STATUS_FLOW.indexOf(selectedBooking.status) === STATUS_FLOW.length - 1
+                      ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'
+                      : 'bg-white hover:bg-amber-50 text-amber-800 border-amber-300 shadow-2xs'
+                  }`}
+                  title="Move booking forward to next stage"
+                >
+                  <span>Next Stage</span>
+                  <Icon name="ArrowRightIcon" size={13} />
+                </button>
+              </div>
               {selectedBooking.status === 'new_enquiry' && (
                 <div className="flex gap-2">
                   <button onClick={() => { updateStatus(selectedBooking.id, 'menu_sent'); setShowMenuPanel(true); }}
@@ -5886,22 +6495,18 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 </button>
               )}
               {selectedBooking.status === 'deposit_pending' && (
-                <button
-                  onClick={() => {
-                    if (!depositPaymentMethod) return;
-                    confirmDepositPaid(selectedBooking.id, depositPaymentMethod);
-                  }}
-                  disabled={!selectedBooking.paymentProofDeposit || !depositPaymentMethod}
-                  title={!selectedBooking.paymentProofDeposit ? "Please upload the payment screenshot first" : !depositPaymentMethod ? "Please select a payment method" : ""}
-                  className={`w-full font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 transition-all ${(!selectedBooking.paymentProofDeposit || !depositPaymentMethod) ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300' : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md'}`}
-                >
-                  <Icon name={(!selectedBooking.paymentProofDeposit || !depositPaymentMethod) ? "LockClosedIcon" : "CheckCircleIcon"} size={16} />
-                  {!selectedBooking.paymentProofDeposit 
-                    ? 'Upload Screenshot to Proceed' 
-                    : !depositPaymentMethod 
-                      ? 'Select Payment Method to Proceed' 
-                      : 'Confirm Deposit Received'}
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => {
+                      const method = depositPaymentMethod || 'Paid by Bank Transfer';
+                      confirmDepositPaid(selectedBooking.id, method);
+                    }}
+                    className="w-full font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 transition-all bg-emerald-600 hover:bg-emerald-700 text-white shadow-md active:scale-95"
+                  >
+                    <Icon name="CheckCircleIcon" size={16} />
+                    Confirm Deposit Received ({depositPaymentMethod ? depositPaymentMethod.replace('Paid by ', '') : 'Bank Transfer'})
+                  </button>
+                </div>
               )}
               {selectedBooking.status === 'deposit_confirmed' && (
                 <div className="space-y-2">
@@ -5912,39 +6517,28 @@ Once you have completed the transfer, please send us a screenshot of the payment
                     <Icon name="ArrowDownTrayIcon" size={16} />
                     Download Deposit Invoice
                   </button>
-                  {!selectedBooking.dueDate ? (
-                    <div className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed">
-                      <Icon name="LockClosedIcon" size={15} />
-                      Set Payment Due Date First ↑
-                    </div>
-                  ) : (
-                    <button onClick={() => updateStatus(selectedBooking.id, 'final_invoice_sent')}
-                      disabled={selectedBooking.discountRequest?.status === 'pending'}
-                      className={`w-full text-white font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 ${selectedBooking.discountRequest?.status === 'pending' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}>
-                      <Icon name="DocumentTextIcon" size={16} />
-                      {selectedBooking.discountRequest?.status === 'pending' ? 'Awaiting Discount Approval' : 'Send Final Invoice (above)'}
-                    </button>
-                  )}
+                  <button onClick={() => updateStatus(selectedBooking.id, 'final_invoice_sent')}
+                    disabled={selectedBooking.discountRequest?.status === 'pending'}
+                    className={`w-full text-white font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 ${selectedBooking.discountRequest?.status === 'pending' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}>
+                    <Icon name="DocumentTextIcon" size={16} />
+                    {selectedBooking.discountRequest?.status === 'pending' ? 'Awaiting Discount Approval' : 'Send Final Invoice'}
+                  </button>
                 </div>
               )}
               {selectedBooking.status === 'final_invoice_sent' && (
-                <button
-                  onClick={() => {
-                    if (!finalPaymentMethod) return;
-                    confirmFinalPayment(selectedBooking.id, finalPaymentMethod);
-                  }}
-                  disabled={!finalPaymentMethod || (finalPaymentMethod !== 'Paid by Cash' && !selectedBooking.paymentProofFinal)}
-                  title={!finalPaymentMethod ? "Please select a payment method" : (finalPaymentMethod !== 'Paid by Cash' && !selectedBooking.paymentProofFinal) ? "Please upload the payment screenshot first" : ""}
-                  className={`w-full font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-md ${(!finalPaymentMethod || (finalPaymentMethod !== 'Paid by Cash' && !selectedBooking.paymentProofFinal)) ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300' : 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'}`}
-                >
-                  <Icon name={(!finalPaymentMethod || (finalPaymentMethod !== 'Paid by Cash' && !selectedBooking.paymentProofFinal)) ? "LockClosedIcon" : "CheckBadgeIcon"} size={16} />
-                  {!finalPaymentMethod 
-                    ? 'Select Payment Method to Proceed' 
-                    : (finalPaymentMethod !== 'Paid by Cash' && !selectedBooking.paymentProofFinal)
-                      ? 'Upload Screenshot to Proceed' 
-                      : 'Confirm Final Payment & Close Order'}
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => {
+                      const method = finalPaymentMethod || 'Paid by Bank Transfer';
+                      confirmFinalPayment(selectedBooking.id, method);
+                    }}
+                    className="w-full font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 transition-all shadow-md bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95"
+                  >
+                    <Icon name="CheckBadgeIcon" size={16} />
+                    Confirm Final Payment &amp; Close Order ({finalPaymentMethod ? finalPaymentMethod.replace('Paid by ', '') : 'Bank Transfer'})
+                  </button>
+                </div>
               )}
               {selectedBooking.status === 'final_payment_received' && (
                 <div className="space-y-2">

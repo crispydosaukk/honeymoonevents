@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Icon from '@/components/ui/AppIcon';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, setDoc, doc } from 'firebase/firestore';
@@ -63,6 +63,9 @@ export interface ManualBookingFormProps {
   liveCounters?: LiveCounterPackageType;
   venueHallCharges?: VenueHallChargeItem[];
   kidsPricing?: KidsPricingItem[];
+  editingBooking?: any;
+  onBookingUpdated?: (booking: any) => void;
+  onCancelEdit?: () => void;
   onBookingCreated?: (bookingId: string) => void;
   onNavigateTab?: (tab: string, date?: string) => void;
   onGenerateInvoice?: (booking: any, isDepositOnly?: boolean) => void;
@@ -91,6 +94,9 @@ export default function ManualBookingForm({
   liveCounters = DEFAULT_LIVE_COUNTER_PACKAGE,
   venueHallCharges = DEFAULT_VENUE_HALL_CHARGES,
   kidsPricing = DEFAULT_KIDS_PRICING,
+  editingBooking,
+  onBookingUpdated,
+  onCancelEdit,
   onBookingCreated,
   onNavigateTab,
   onGenerateInvoice,
@@ -234,6 +240,127 @@ export default function ManualBookingForm({
 
   // Initialize configured default charges on first mount or step 3
   const [chargesInitialized, setChargesInitialized] = useState(false);
+
+  // ── Pre-fill when amending an existing booking ──
+  useEffect(() => {
+    if (!editingBooking) return;
+
+    setCustomerDetails({
+      name: editingBooking.name || '',
+      phone: editingBooking.phone || '',
+      email: editingBooking.email || '',
+      eventType: editingBooking.eventType || 'Wedding',
+      customEventType: '',
+      date: editingBooking.date ? editingBooking.date.split('T')[0] : '',
+      timeSession: editingBooking.timeSession || editingBooking.time || '6:00 PM',
+      customTime: editingBooking.customTime || '',
+      adults: editingBooking.adults ?? editingBooking.guests ?? 100,
+      kids4to10: editingBooking.kids4to10 ?? 0,
+      kidsUnder4: editingBooking.kidsUnder4 ?? 0,
+      notes: editingBooking.notes || '',
+    });
+
+    const pkgName = editingBooking.selectedMenu || editingBooking.package;
+    const foundPkg = banquetPackages.find(
+      (p) => p.name.toLowerCase() === (pkgName || '').toLowerCase()
+    );
+    if (foundPkg) {
+      setSelectedPackageId(foundPkg.id);
+    } else if (pkgName) {
+      setSelectedPackageId('custom');
+      setSelectedPackageCustomPrice(editingBooking.pricePerPerson || 35);
+    }
+
+    if (editingBooking.priceOverrides) {
+      if (editingBooking.priceOverrides.package?.custom !== undefined) {
+        setPackagePriceOverride(editingBooking.priceOverrides.package.custom);
+        setPackagePriceOverrideReason(editingBooking.priceOverrides.package.reason || '');
+        setShowPackagePriceEditor(true);
+      } else if (editingBooking.priceOverrides.packagePrice !== undefined) {
+        setPackagePriceOverride(editingBooking.priceOverrides.packagePrice);
+        setShowPackagePriceEditor(true);
+      }
+
+      if (editingBooking.priceOverrides.kids4to10?.custom !== undefined) {
+        setKidsPriceOverride(editingBooking.priceOverrides.kids4to10.custom);
+        setKidsPriceOverrideReason(editingBooking.priceOverrides.kids4to10.reason || '');
+        setShowKidsPriceEditor(true);
+      } else if (editingBooking.priceOverrides.kidsPrice !== undefined) {
+        setKidsPriceOverride(editingBooking.priceOverrides.kidsPrice);
+        setShowKidsPriceEditor(true);
+      }
+
+      if (editingBooking.priceOverrides.kidsUnder4?.custom !== undefined) {
+        setKidsUnder4PriceOverride(editingBooking.priceOverrides.kidsUnder4.custom);
+        setKidsUnder4PriceOverrideReason(editingBooking.priceOverrides.kidsUnder4.reason || '');
+        setShowKidsUnder4PriceEditor(true);
+      } else if (editingBooking.priceOverrides.kidsUnder4Price !== undefined) {
+        setKidsUnder4PriceOverride(editingBooking.priceOverrides.kidsUnder4Price);
+        setShowKidsUnder4PriceEditor(true);
+      }
+    }
+
+    if (editingBooking.selectedDishes) {
+      setSelectedVegStarters(editingBooking.selectedDishes.vegStarters || []);
+      setSelectedNonVegStarters(editingBooking.selectedDishes.nonVegStarters || []);
+      setSelectedVegMains(editingBooking.selectedDishes.vegMains || []);
+      setSelectedNonVegMains(editingBooking.selectedDishes.nonVegMains || []);
+      setSelectedSundries(editingBooking.selectedDishes.sundries || []);
+      setSelectedDesserts(editingBooking.selectedDishes.desserts || []);
+      if (Array.isArray(editingBooking.selectedDishes.extraMenuItems)) {
+        setExtraMenuItems(
+          editingBooking.selectedDishes.extraMenuItems.map((item: any, idx: number) => ({
+            id: `extra-edit-${idx}`,
+            name: item.name,
+            description: item.description || '',
+            cost: Number(item.cost) || 0,
+          }))
+        );
+      }
+    }
+
+    if (editingBooking.deposit !== undefined) {
+      setCustomDepositAmount(String(editingBooking.deposit));
+    }
+    if (editingBooking.dueDate) {
+      setPaymentDueDate(editingBooking.dueDate);
+    }
+    if (editingBooking.paymentMethodDeposit || editingBooking.paymentMethodFinal) {
+      setPaymentMethod(editingBooking.paymentMethodDeposit || editingBooking.paymentMethodFinal);
+    }
+    if (editingBooking.finalPaymentPaid || editingBooking.status === 'completed') {
+      setPaymentChoice('full');
+    } else if (editingBooking.depositPaid) {
+      setPaymentChoice('advance');
+    } else {
+      setPaymentChoice('pending');
+    }
+
+    if (editingBooking.discount) {
+      setDiscountType(editingBooking.discount.type || 'fixed');
+      setDiscountValue(String(editingBooking.discount.value || ''));
+      setDiscountReason(editingBooking.discount.reason || '');
+    }
+
+    if (Array.isArray(editingBooking.extraCharges)) {
+      const nonPreset = editingBooking.extraCharges.filter(
+        (c: any) =>
+          !c.label?.startsWith('Hall Hire:') &&
+          !c.label?.startsWith('Live Counter:') &&
+          !c.label?.startsWith('Extra:') &&
+          !c.label?.startsWith('Extra Menu:')
+      );
+      if (nonPreset.length > 0) {
+        setBookingExtraCharges(
+          nonPreset.map((c: any) => ({
+            label: c.label,
+            amount: c.amount,
+            isPreset: c.isPreset ?? false,
+          }))
+        );
+      }
+    }
+  }, [editingBooking, banquetPackages]);
 
   // Current package object
   const currentPackage = useMemo(() => {
@@ -673,7 +800,8 @@ export default function ManualBookingForm({
 
     setIsSubmitting(true);
     try {
-      const bookingRefId = `BK-${Date.now().toString().slice(-6)}`;
+      const isEditing = Boolean(editingBooking?.id);
+      const bookingRefId = isEditing ? editingBooking.id : `BK-${Date.now().toString().slice(-6)}`;
       const fullPhone = customerDetails.phone.startsWith('+')
         ? customerDetails.phone
         : `+44${customerDetails.phone.replace(/^0/, '').replace(/\s/g, '')}`;
@@ -689,11 +817,9 @@ export default function ManualBookingForm({
       const isDepositPaid = paymentChoice === 'advance' || paymentChoice === 'full';
       const isFinalPaid = paymentChoice === 'full';
 
-      const finalStatus = isFinalPaid
-        ? 'completed'
-        : isDepositPaid
-        ? 'deposit_confirmed'
-        : 'deposit_pending';
+      const finalStatus = isEditing
+        ? (editingBooking.status || (isFinalPaid ? 'completed' : isDepositPaid ? 'deposit_confirmed' : 'deposit_pending'))
+        : (isFinalPaid ? 'completed' : isDepositPaid ? 'deposit_confirmed' : 'deposit_pending');
 
       const auditNotes = activePriceOverridesList.map(
         (item) => `${item.title}: £${item.original} → £${item.custom} (Reason: ${item.reason})`
@@ -792,9 +918,9 @@ export default function ManualBookingForm({
             cost: item.cost,
           })),
         },
-        createdAt: new Date().toISOString(),
+        createdAt: isEditing && editingBooking.createdAt ? editingBooking.createdAt : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        enquiryDate: new Date().toISOString().split('T')[0],
+        enquiryDate: isEditing && editingBooking.enquiryDate ? editingBooking.enquiryDate : new Date().toISOString().split('T')[0],
       };
 
       if (isDepositPaid && paymentMethod) {
@@ -815,18 +941,22 @@ export default function ManualBookingForm({
       const cleanRecord = JSON.parse(JSON.stringify(bookingRecord));
 
       // 1. Write to booking_requests (the primary collection consumed across the dashboard)
-      await setDoc(doc(db, 'booking_requests', bookingRefId), cleanRecord);
+      await setDoc(doc(db, 'booking_requests', bookingRefId), cleanRecord, { merge: true });
 
       // 2. Mirror to bookings collection if permitted
       try {
-        await setDoc(doc(db, 'bookings', bookingRefId), cleanRecord);
+        await setDoc(doc(db, 'bookings', bookingRefId), cleanRecord, { merge: true });
       } catch (mirrorErr) {
         console.warn('Mirror to bookings skipped:', mirrorErr);
       }
 
       setCreatedBooking(cleanRecord);
       setCurrentStep(4);
-      if (onBookingCreated) onBookingCreated(bookingRefId);
+      if (isEditing && onBookingUpdated) {
+        onBookingUpdated(cleanRecord);
+      } else if (onBookingCreated) {
+        onBookingCreated(bookingRefId);
+      }
     } catch (error: any) {
       console.error('Error placing manual booking:', error);
       setCenterModal({
@@ -896,18 +1026,40 @@ export default function ManualBookingForm({
       <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <span
                 className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white shadow"
                 style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}
               >
-                <Icon name="PlusCircleIcon" size={20} />
+                <Icon name={editingBooking ? "PencilSquareIcon" : "PlusCircleIcon"} size={20} />
               </span>
-              <h2 className="text-xl font-bold text-gray-900">Manual Booking Creation</h2>
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-xl font-bold text-gray-900">
+                    {editingBooking ? `Amend Booking #${editingBooking.id}` : 'Manual Booking Creation'}
+                  </h2>
+                  {editingBooking && (
+                    <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                      Edit Mode
+                    </span>
+                  )}
+                  {editingBooking && onCancelEdit && (
+                    <button
+                      type="button"
+                      onClick={onCancelEdit}
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                    >
+                      ← Back to Bookings
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {editingBooking
+                    ? `Amending details for ${customerDetails.name || editingBooking.name}. All fields are enabled and changes can be saved or adjusted at any time.`
+                    : 'Create and confirm bespoke bookings with custom price overrides, reasons, menu selections, advance payments, and automatic calendar sync.'}
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Create and confirm bespoke bookings with custom price overrides, reasons, menu selections, advance payments, and automatic calendar sync.
-            </p>
           </div>
 
           {currentStep !== 4 && (
@@ -938,11 +1090,10 @@ export default function ManualBookingForm({
               <button
                 key={s.step}
                 type="button"
-                disabled={currentStep === 4}
                 onClick={() => {
                   if (s.step === 1) setCurrentStep(1);
-                  if (s.step === 2 && validateStep1()) setCurrentStep(2);
-                  if (s.step === 3 && validateStep1()) {
+                  if (s.step === 2) setCurrentStep(2);
+                  if (s.step === 3) {
                     handleEnterStep3();
                     setCurrentStep(3);
                   }
@@ -951,8 +1102,8 @@ export default function ManualBookingForm({
                   isCurrent
                     ? 'border-amber-400 bg-amber-50/60 shadow-sm ring-1 ring-amber-300'
                     : isCompleted
-                    ? 'border-emerald-200 bg-emerald-50/30 text-gray-700'
-                    : 'border-gray-200 bg-gray-50/60 text-gray-400'
+                    ? 'border-emerald-200 bg-emerald-50/30 text-gray-700 hover:border-emerald-300'
+                    : 'border-gray-200 bg-gray-50/60 text-gray-600 hover:border-gray-300'
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -3866,15 +4017,51 @@ export default function ManualBookingForm({
             </a>
           </div>
 
-          {/* Reset / Create Another Booking */}
-          <div className="pt-4 border-t border-gray-100">
-            <button
-              type="button"
-              onClick={handleResetForm}
-              className="text-xs font-semibold text-gray-500 hover:text-gray-900 underline"
-            >
-              + Create Another Booking
-            </button>
+          {/* Reset / Create Another Booking / Amend Booking */}
+          <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentStep(1)}
+                className="text-xs font-bold text-amber-800 hover:text-amber-950 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 transition-colors shadow-2xs"
+              >
+                <Icon name="PencilIcon" size={13} />
+                <span>Amend Customer &amp; Pricing (Step 1)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentStep(2)}
+                className="text-xs font-bold text-amber-800 hover:text-amber-950 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 transition-colors shadow-2xs"
+              >
+                <Icon name="PencilIcon" size={13} />
+                <span>Amend Menu &amp; Extras (Step 2)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentStep(3)}
+                className="text-xs font-bold text-amber-800 hover:text-amber-950 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 transition-colors shadow-2xs"
+              >
+                <Icon name="PencilIcon" size={13} />
+                <span>Amend Payment (Step 3)</span>
+              </button>
+            </div>
+            {editingBooking && onCancelEdit ? (
+              <button
+                type="button"
+                onClick={onCancelEdit}
+                className="text-xs font-semibold px-4 py-2 rounded-xl bg-gray-900 hover:bg-black text-white transition-colors shadow-sm"
+              >
+                ← Return to Bookings
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleResetForm}
+                className="text-xs font-semibold text-gray-500 hover:text-gray-900 underline"
+              >
+                + Create Another Booking
+              </button>
+            )}
           </div>
         </div>
       )}
