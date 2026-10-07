@@ -11,6 +11,7 @@ import {
   BANQUET_PACKAGES as DEFAULT_BANQUET_PACKAGES,
   VENUE_HALL_CHARGES as DEFAULT_VENUE_HALL_CHARGES,
   KIDS_PRICING as DEFAULT_KIDS_PRICING,
+  DRY_HIRE_PRICES as DEFAULT_DRY_HIRE_PRICES,
 } from '@/app/data/menuData';
 import { ConfiguredExtraCharge } from './ExtraChargesSettings';
 import { generateChefMenuPDF, openChefWhatsApp } from '@/utils/chefMenuPDF';
@@ -40,6 +41,7 @@ export type IndianMenuType = typeof DEFAULT_INDIAN_MENU;
 export type SriLankanMenuType = typeof DEFAULT_SRI_LANKAN_MENU;
 export type LiveCounterPackageType = typeof DEFAULT_LIVE_COUNTER_PACKAGE;
 export type VenueHallChargeItem = typeof DEFAULT_VENUE_HALL_CHARGES[0];
+export type DryHirePriceItem = typeof DEFAULT_DRY_HIRE_PRICES[0];
 export type KidsPricingItem = typeof DEFAULT_KIDS_PRICING[0];
 
 export interface ManualBookingFormProps {
@@ -62,6 +64,7 @@ export interface ManualBookingFormProps {
   sriLankanMenu?: SriLankanMenuType;
   liveCounters?: LiveCounterPackageType;
   venueHallCharges?: VenueHallChargeItem[];
+  dryHirePrices?: DryHirePriceItem[];
   kidsPricing?: KidsPricingItem[];
   editingBooking?: any;
   onBookingUpdated?: (booking: any) => void;
@@ -93,6 +96,7 @@ export default function ManualBookingForm({
   sriLankanMenu = DEFAULT_SRI_LANKAN_MENU,
   liveCounters = DEFAULT_LIVE_COUNTER_PACKAGE,
   venueHallCharges = DEFAULT_VENUE_HALL_CHARGES,
+  dryHirePrices = DEFAULT_DRY_HIRE_PRICES,
   kidsPricing = DEFAULT_KIDS_PRICING,
   editingBooking,
   onBookingUpdated,
@@ -139,6 +143,13 @@ export default function ManualBookingForm({
   const [menuTab, setMenuTab] = useState<'packages' | 'indian' | 'srilankan' | 'live' | 'hall' | 'extra_menu'>('packages');
   const [selectedPackageId, setSelectedPackageId] = useState<string>('silver');
   const [selectedPackageCustomPrice, setSelectedPackageCustomPrice] = useState<number | string>(35);
+
+  // ── Venue Dry Hire (Enquiry Options & Rate Flexibility) ──
+  const [bookingCategory, setBookingCategory] = useState<'banquet' | 'venue_dry_hire'>('banquet');
+  const [selectedVenueDryHireId, setSelectedVenueDryHireId] = useState<string>('dry-saturday-dinner');
+  const [venueDryHirePriceOverride, setVenueDryHirePriceOverride] = useState<number | string | null>(null);
+  const [venueDryHirePriceOverrideReason, setVenueDryHirePriceOverrideReason] = useState<string>('');
+  const [showVenueDryHirePriceEditor, setShowVenueDryHirePriceEditor] = useState<boolean>(false);
 
   // ── Price Overrides & Flexibility (Local to Manual Booking Flow Only) ──
   // Adult / Package rate override
@@ -260,15 +271,28 @@ export default function ManualBookingForm({
       notes: editingBooking.notes || '',
     });
 
-    const pkgName = editingBooking.selectedMenu || editingBooking.package;
-    const foundPkg = banquetPackages.find(
-      (p) => p.name.toLowerCase() === (pkgName || '').toLowerCase()
-    );
-    if (foundPkg) {
-      setSelectedPackageId(foundPkg.id);
-    } else if (pkgName) {
-      setSelectedPackageId('custom');
-      setSelectedPackageCustomPrice(editingBooking.pricePerPerson || 35);
+    const pkgName = (editingBooking.selectedMenu || editingBooking.package || '').trim();
+    if (pkgName.toLowerCase().includes('dry hire') || pkgName.toLowerCase().includes('venue hall')) {
+      setBookingCategory('venue_dry_hire');
+      if (editingBooking.priceOverrides?.venueDryHire?.optionId) {
+        setSelectedVenueDryHireId(editingBooking.priceOverrides.venueDryHire.optionId);
+      }
+      if (editingBooking.priceOverrides?.venueDryHire?.custom !== undefined) {
+        setVenueDryHirePriceOverride(editingBooking.priceOverrides.venueDryHire.custom);
+        setVenueDryHirePriceOverrideReason(editingBooking.priceOverrides.venueDryHire.reason || '');
+        setShowVenueDryHirePriceEditor(true);
+      }
+    } else {
+      setBookingCategory('banquet');
+      const foundPkg = banquetPackages.find(
+        (p) => p.name.toLowerCase() === pkgName.toLowerCase()
+      );
+      if (foundPkg) {
+        setSelectedPackageId(foundPkg.id);
+      } else if (pkgName) {
+        setSelectedPackageId('custom');
+        setSelectedPackageCustomPrice(editingBooking.pricePerPerson || 35);
+      }
     }
 
     if (editingBooking.priceOverrides) {
@@ -362,6 +386,64 @@ export default function ManualBookingForm({
     }
   }, [editingBooking, banquetPackages]);
 
+  // ── Venue Dry Hire Options (Combined from enquiry options, dry hire prices & venue hall charges) ──
+  const venueDryHireOptions = useMemo(() => {
+    const list: { id: string; name: string; group: 'Dry Hire' | 'Venue Hall' | 'Enquiry Form'; price: number; detail?: string }[] = [];
+
+    // Dry Hire Prices (from menu settings / data)
+    (dryHirePrices || DEFAULT_DRY_HIRE_PRICES).forEach((dh) => {
+      const idKey = `dry-${dh.day.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${dh.session.toLowerCase()}`;
+      list.push({
+        id: idKey,
+        name: `Dry Hire — ${dh.day} (${dh.session})`,
+        group: 'Dry Hire',
+        price: dh.price,
+        detail: `${dh.day} ${dh.session} (Outside Catering)`,
+      });
+    });
+
+    // Venue Hall Charges (from menu settings / data)
+    (venueHallCharges || DEFAULT_VENUE_HALL_CHARGES).forEach((vh, idx) => {
+      const priceMatch = vh.charge.match(/£(\d+)/);
+      const parsedAmount = priceMatch ? parseInt(priceMatch[1]) : 250;
+      const idKey = `hall-${vh.day.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${idx}`;
+      list.push({
+        id: idKey,
+        name: `Venue Hall — ${vh.day}${vh.note ? ` (${vh.note})` : ''}`,
+        group: 'Venue Hall',
+        price: parsedAmount,
+        detail: vh.note ? `${vh.note} · Hall Hire` : 'Hall Hire Fee',
+      });
+    });
+
+    // Enquiry Dropdown options
+    list.push({
+      id: 'enquiry-venue-hall',
+      name: 'Venue Hall (Enquiry Standard)',
+      group: 'Enquiry Form',
+      price: 250,
+      detail: 'Standard Venue Hall Hire from Enquiry Form',
+    });
+    list.push({
+      id: 'enquiry-dry-hire',
+      name: 'Dry Hire (Enquiry Standard)',
+      group: 'Enquiry Form',
+      price: 1500,
+      detail: 'Standard Dry Hire Option from Enquiry Form',
+    });
+
+    return list;
+  }, [dryHirePrices, venueHallCharges]);
+
+  const selectedVenueDryHireItem = useMemo(() => {
+    return venueDryHireOptions.find((opt) => opt.id === selectedVenueDryHireId) || venueDryHireOptions[0];
+  }, [venueDryHireOptions, selectedVenueDryHireId]);
+
+  const defaultVenueDryHirePrice = selectedVenueDryHireItem?.price || 1500;
+  const effectiveVenueDryHirePrice = (venueDryHirePriceOverride !== null && venueDryHirePriceOverride !== '')
+    ? Number(venueDryHirePriceOverride)
+    : defaultVenueDryHirePrice;
+
   // Current package object
   const currentPackage = useMemo(() => {
     return banquetPackages.find((p) => p.id === selectedPackageId) || banquetPackages[2] || banquetPackages[0];
@@ -393,7 +475,9 @@ export default function ManualBookingForm({
   }, [kidsPricing, currentPackage, selectedPackageId]);
 
   // Base Package rate per head
-  const defaultPackagePricePerPerson = selectedPackageId === 'custom' ? Number(selectedPackageCustomPrice || 0) : currentPackage?.pricePerPerson || 35;
+  const defaultPackagePricePerPerson = bookingCategory === 'venue_dry_hire'
+    ? 0
+    : (selectedPackageId === 'custom' ? Number(selectedPackageCustomPrice || 0) : currentPackage?.pricePerPerson || 35);
 
   // ── Effective Prices (with custom overrides if set) ──
   const effectivePackagePrice = (packagePriceOverride !== null && packagePriceOverride !== '') ? Number(packagePriceOverride) : defaultPackagePricePerPerson;
@@ -406,12 +490,15 @@ export default function ManualBookingForm({
   const kidsUnder4FoodTotal = Number(customerDetails.kidsUnder4 || 0) * effectiveKidsUnder4Price;
   const foodBaseAmount = adultFoodTotal + kidsFoodTotal + kidsUnder4FoodTotal;
 
+  // Venue Dry Hire fee
+  const venueDryHireTotal = bookingCategory === 'venue_dry_hire' ? effectiveVenueDryHirePrice : 0;
+
   // Live counters, extras, hall, and extra menu items totals
   const liveCountersTotal = selectedLiveCounters.reduce((acc, item) => acc + Number(item.price || 0), 0);
   const extrasTotal = selectedExtras.reduce((acc, item) => acc + Number(item.price || 0), 0);
   const hallTotal = selectedHallOption ? Number(selectedHallOption.amount || 0) : 0;
   const extraMenuItemsTotal = extraMenuItems.reduce((acc, item) => acc + Number(item.cost || 0), 0);
-  const subtotalBeforeExtras = foodBaseAmount + hallTotal + liveCountersTotal + extrasTotal + extraMenuItemsTotal;
+  const subtotalBeforeExtras = foodBaseAmount + venueDryHireTotal + hallTotal + liveCountersTotal + extrasTotal + extraMenuItemsTotal;
 
   // Extra charges total
   const extraChargesTotal = bookingExtraCharges.reduce((acc, item) => acc + Number(item.amount || 0), 0);
@@ -448,6 +535,15 @@ export default function ManualBookingForm({
   // ── Active Price Overrides List for Audit & Transparency ──
   const activePriceOverridesList = useMemo(() => {
     const list: { title: string; original: number; custom: number; reason: string; category: string }[] = [];
+    if (bookingCategory === 'venue_dry_hire' && venueDryHirePriceOverride !== null && venueDryHirePriceOverride !== '' && Number(venueDryHirePriceOverride) !== defaultVenueDryHirePrice) {
+      list.push({
+        title: `Venue Dry Hire (${selectedVenueDryHireItem?.name})`,
+        original: defaultVenueDryHirePrice,
+        custom: Number(venueDryHirePriceOverride),
+        reason: venueDryHirePriceOverrideReason.trim() || 'Custom venue hire fee override',
+        category: 'Venue Dry Hire',
+      });
+    }
     if (packagePriceOverride !== null && packagePriceOverride !== '' && Number(packagePriceOverride) !== defaultPackagePricePerPerson) {
       list.push({
         title: `Package Rate (${currentPackage?.name || 'Package'})`,
@@ -637,18 +733,29 @@ export default function ManualBookingForm({
       adults: Number(customerDetails.adults),
       kids4to10: Number(customerDetails.kids4to10),
       kidsUnder4: Number(customerDetails.kidsUnder4),
-      package: currentPackage?.name || 'Custom Package',
-      selectedMenu: currentPackage?.name || 'Custom Package',
+      package: bookingCategory === 'venue_dry_hire'
+        ? (selectedVenueDryHireItem?.name || 'Venue Dry Hire')
+        : (currentPackage?.name || 'Custom Package'),
+      selectedMenu: bookingCategory === 'venue_dry_hire'
+        ? (selectedVenueDryHireItem?.name || 'Venue Dry Hire')
+        : (currentPackage?.name || 'Custom Package'),
       pricePerPerson: effectivePackagePrice,
       kidsPricePerPerson: effectiveKidsPrice,
       kidsUnder4PricePerPerson: effectiveKidsUnder4Price,
-      baseAmount: foodBaseAmount,
+      baseAmount: foodBaseAmount + venueDryHireTotal,
       deposit: amountPaid,
       depositPaid: isDepositOnly || paymentChoice !== 'pending',
       finalPaymentPaid: !isDepositOnly && paymentChoice === 'full',
       status: paymentChoice === 'full' ? 'completed' : isDepositOnly ? 'deposit_confirmed' : 'new_enquiry',
       notes: customerDetails.notes.trim() + (auditNotes.length > 0 ? (customerDetails.notes.trim() ? '\n\n' : '') + '🏷️ Price Adjustments:\n' + auditNotes.join('\n') : ''),
       priceOverrides: {
+        venueDryHire: bookingCategory === 'venue_dry_hire' && venueDryHirePriceOverride !== null ? {
+          optionId: selectedVenueDryHireId,
+          name: selectedVenueDryHireItem?.name,
+          original: defaultVenueDryHirePrice,
+          custom: effectiveVenueDryHirePrice,
+          reason: venueDryHirePriceOverrideReason.trim() || 'Custom venue hire fee override',
+        } : null,
         package: packagePriceOverride !== null ? {
           original: defaultPackagePricePerPerson,
           custom: effectivePackagePrice,
@@ -838,12 +945,16 @@ export default function ManualBookingForm({
         adults: Number(customerDetails.adults) || 0,
         kids4to10: Number(customerDetails.kids4to10) || 0,
         kidsUnder4: Number(customerDetails.kidsUnder4) || 0,
-        package: currentPackage?.name || 'Custom Package',
-        selectedMenu: currentPackage?.name || 'Custom Package',
+        package: bookingCategory === 'venue_dry_hire'
+          ? (selectedVenueDryHireItem?.name || 'Venue Dry Hire')
+          : (currentPackage?.name || 'Custom Package'),
+        selectedMenu: bookingCategory === 'venue_dry_hire'
+          ? (selectedVenueDryHireItem?.name || 'Venue Dry Hire')
+          : (currentPackage?.name || 'Custom Package'),
         pricePerPerson: effectivePackagePrice,
         kidsPricePerPerson: effectiveKidsPrice,
         kidsUnder4PricePerPerson: effectiveKidsUnder4Price,
-        baseAmount: foodBaseAmount,
+        baseAmount: foodBaseAmount + venueDryHireTotal,
         deposit: amountPaid,
         depositPaid: isDepositPaid,
         finalPaymentPaid: isFinalPaid,
@@ -852,6 +963,13 @@ export default function ManualBookingForm({
         ...(isFinalPaid ? { orderClosedAt: new Date().toISOString() } : {}),
         notes: customerDetails.notes.trim() + (auditNotes.length > 0 ? (customerDetails.notes.trim() ? '\n\n' : '') + '🏷️ Price Adjustments:\n' + auditNotes.join('\n') : (paymentReference ? `\nPayment Ref: ${paymentReference}` : '')),
         priceOverrides: {
+          venueDryHire: bookingCategory === 'venue_dry_hire' && venueDryHirePriceOverride !== null ? {
+            optionId: selectedVenueDryHireId,
+            name: selectedVenueDryHireItem?.name,
+            original: defaultVenueDryHirePrice,
+            custom: effectiveVenueDryHirePrice,
+            reason: venueDryHirePriceOverrideReason.trim() || 'Custom venue hire fee override',
+          } : null,
           package: packagePriceOverride !== null ? {
             original: defaultPackagePricePerPerson,
             custom: effectivePackagePrice,
@@ -1272,45 +1390,47 @@ export default function ManualBookingForm({
           </div>
 
           {/* ── Package Selection (in Step 1) ── */}
-          <div className="bg-amber-50/40 border border-amber-200/60 rounded-xl p-5 space-y-3.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/50 pb-3">
+          <div className="bg-amber-50/40 border border-amber-200/60 rounded-xl p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/50 pb-3">
               <div>
                 <span className="text-xs font-bold text-amber-900 uppercase tracking-wide flex items-center gap-1.5">
                   <Icon name="SparklesIcon" size={16} />
-                  Select Banquet Package *
+                  Select Banquet Package or Venue Hire *
                 </span>
                 <p className="text-[11px] text-amber-800/80 mt-0.5">
-                  Choose the catering package for this booking. The adult head rate will update automatically.
+                  Choose catering package or venue dry hire. The rates and breakdown will update automatically.
                 </p>
               </div>
               <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-200/70 text-amber-950 border border-amber-300">
-                Selected: {currentPackage?.name} · £{effectivePackagePrice}/pp
+                Selected: {bookingCategory === 'venue_dry_hire' ? `${selectedVenueDryHireItem?.name} · £${effectiveVenueDryHirePrice}` : `${currentPackage?.name} · £${effectivePackagePrice}/pp`}
               </span>
             </div>
 
-            {/* Package Cards Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+            {/* Unified 4-Column Grid: Row 1 = 4 Banquet Cards, Row 2 = 2 Banquet Cards + 1 Venue Dry Hire Card (spanning 2 cols) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Cards 1 to 6: All 6 Banquet Packages Restored */}
               {banquetPackages.map((pkg) => {
-                const isSelected = selectedPackageId === pkg.id;
+                const isSelected = bookingCategory === 'banquet' && selectedPackageId === pkg.id;
                 return (
                   <div
                     key={pkg.id}
                     onClick={() => {
+                      setBookingCategory('banquet');
                       if (selectedPackageId !== pkg.id) {
                         setSelectedPackageId(pkg.id);
                         setPackagePriceOverride(null);
                         setPackagePriceOverrideReason('');
                       }
                     }}
-                    className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
                       isSelected
-                        ? 'border-amber-500 bg-amber-50/70 ring-2 ring-amber-400 shadow-sm'
+                        ? 'border-amber-500 bg-amber-50/80 ring-2 ring-amber-400 shadow-sm'
                         : 'border-gray-200 bg-white hover:border-amber-300 hover:shadow-xs'
                     }`}
                   >
                     <div>
                       <div className="flex items-start justify-between gap-1">
-                        <span className="font-bold text-gray-900 text-xs leading-tight">{pkg.name}</span>
+                        <span className="font-bold text-gray-900 text-sm leading-tight">{pkg.name}</span>
                         <div
                           className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center ${
                             isSelected ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300'
@@ -1325,20 +1445,118 @@ export default function ManualBookingForm({
                         </span>
                       )}
                     </div>
-                    <div className="mt-2 pt-1.5 border-t border-gray-100 flex items-baseline justify-between text-xs">
+                    <div className="mt-3 pt-2 border-t border-gray-100 flex items-baseline justify-between text-xs">
                       <div>
-                        <span className="text-sm font-extrabold text-[#C8860A]">
+                        <span className="text-base font-extrabold text-[#C8860A]">
                           £{pkg.pricePerPerson}
                         </span>
-                        <span className="text-[10px] text-gray-400 ml-0.5">/adult</span>
+                        <span className="text-[11px] text-gray-400 ml-0.5">/adult</span>
                       </div>
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100/70 text-amber-900 border border-amber-200">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100/70 text-amber-900 border border-amber-200">
                         Kids: £{(pkg as any).kidsPrice || getKidsPriceFromList(kidsPricing, pkg.name)}
                       </span>
                     </div>
                   </div>
                 );
               })}
+
+              {/* Card 7: Venue Dry Hire Card with embedded Dropdown (Spans 2 columns on lg & sm) */}
+              {(() => {
+                const isSelected = bookingCategory === 'venue_dry_hire';
+                return (
+                  <div
+                    onClick={() => {
+                      setBookingCategory('venue_dry_hire');
+                    }}
+                    className={`col-span-1 sm:col-span-2 lg:col-span-2 p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
+                      isSelected
+                        ? 'border-amber-500 bg-amber-50/90 ring-2 ring-amber-400 shadow-sm'
+                        : 'border-amber-300/80 bg-white hover:border-amber-400 hover:shadow-xs'
+                    }`}
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-base">🏛️</span>
+                          <span className="font-bold text-gray-900 text-sm leading-tight">Venue Dry Hire</span>
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                            Outside Catering / Hall
+                          </span>
+                        </div>
+                        <div
+                          className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center ${
+                            isSelected ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300'
+                          }`}
+                        >
+                          {isSelected && <Icon name="CheckIcon" size={10} />}
+                        </div>
+                      </div>
+
+                      {/* Dropdown with all previous enquiry options */}
+                      <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
+                        <label className="block text-[10px] font-bold text-amber-900 mb-1">
+                          Select Hire Option / Enquiry Session:
+                        </label>
+                        <select
+                          value={selectedVenueDryHireId}
+                          onChange={(e) => {
+                            setBookingCategory('venue_dry_hire');
+                            setSelectedVenueDryHireId(e.target.value);
+                            setVenueDryHirePriceOverride(null);
+                            setVenueDryHirePriceOverrideReason('');
+                          }}
+                          className="w-full border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-900 bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        >
+                          <optgroup label="── Dry Hire (Outside Catering) ──">
+                            {venueDryHireOptions.filter(o => o.group === 'Dry Hire').map(o => (
+                              <option key={o.id} value={o.id}>{o.name} — £{o.price}</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="── Venue Hall Charges ──">
+                            {venueDryHireOptions.filter(o => o.group === 'Venue Hall').map(o => (
+                              <option key={o.id} value={o.id}>{o.name} — £{o.price}</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="── Enquiry Form Packages ──">
+                            {venueDryHireOptions.filter(o => o.group === 'Enquiry Form').map(o => (
+                              <option key={o.id} value={o.id}>{o.name} — £{o.price}</option>
+                            ))}
+                          </optgroup>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="mt-2.5 pt-2 border-t border-amber-200/60 flex items-baseline justify-between text-xs">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-base font-extrabold text-[#C8860A]">
+                          £{effectiveVenueDryHirePrice}
+                        </span>
+                        <span className="text-[11px] text-gray-500 font-normal">fixed hire fee</span>
+                        {venueDryHirePriceOverride !== null && (
+                          <span className="line-through text-gray-400 text-[10px] ml-1">£{defaultVenueDryHirePrice}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-gray-500 font-medium">
+                          {selectedVenueDryHireItem?.detail}
+                        </span>
+                        {isSelected && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowVenueDryHirePriceEditor(true);
+                            }}
+                            className="text-[10px] font-bold text-[#C8860A] hover:underline bg-amber-100/70 px-1.5 py-0.5 rounded border border-amber-300"
+                          >
+                            Edit Rate ↓
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -1358,6 +1576,93 @@ export default function ManualBookingForm({
                 Total Guests: {totalGuests}
               </span>
             </div>
+
+            {/* When Venue Dry Hire is selected: Display Dedicated Venue Dry Hire Fee Box with Edit Rate drawer (Image 3 style) */}
+            {bookingCategory === 'venue_dry_hire' && (
+              <div className="bg-white p-4 rounded-xl border-2 border-amber-300 space-y-2.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🏛️</span>
+                    <div>
+                      <span className="text-xs font-bold text-gray-900">
+                        Venue Dry Hire Fee ({selectedVenueDryHireItem?.name}) *
+                      </span>
+                      <div className="text-[10px] text-gray-500 font-medium">
+                        Fixed hire fee for event date &amp; session · External caterer friendly
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowVenueDryHirePriceEditor(!showVenueDryHirePriceEditor)}
+                    className="text-[11px] font-semibold text-[#C8860A] hover:underline flex items-center gap-1 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200"
+                  >
+                    <Icon name="PencilSquareIcon" size={13} />
+                    {venueDryHirePriceOverride !== null ? 'Custom Rate' : 'Edit Rate'}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between pt-1 border-t border-gray-100">
+                  <span className="text-xs text-gray-500 font-medium">Agreed Rate:</span>
+                  <div className="text-right">
+                    <span className="text-base font-extrabold text-[#C8860A]">
+                      £{effectiveVenueDryHirePrice}
+                    </span>
+                    <span className="text-[11px] text-gray-400 font-normal ml-1">fixed venue fee</span>
+                    {venueDryHirePriceOverride !== null && (
+                      <span className="line-through text-gray-400 font-normal ml-2 text-xs">
+                        £{defaultVenueDryHirePrice}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Inline Venue Dry Hire Price Override Drawer (Image 3 style) */}
+                {showVenueDryHirePriceEditor && (
+                  <div className="mt-2.5 p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2.5 text-xs animate-fade-in">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-amber-900">
+                        Custom Venue Dry Hire Fee ({selectedVenueDryHireItem?.name}):
+                      </span>
+                      {venueDryHirePriceOverride !== null && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVenueDryHirePriceOverride(null);
+                            setVenueDryHirePriceOverrideReason('');
+                          }}
+                          className="text-[10px] text-red-600 hover:underline font-semibold"
+                        >
+                          Reset to £{defaultVenueDryHirePrice}
+                        </button>
+                      )}
+                    </div>
+                    <div>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold">£</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={venueDryHirePriceOverride !== null ? venueDryHirePriceOverride : defaultVenueDryHirePrice}
+                          onChange={(e) => setVenueDryHirePriceOverride(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
+                          placeholder="Agreed venue dry hire fee"
+                          className="w-full pl-6 pr-2 py-1.5 border border-amber-300 rounded-lg text-xs font-bold text-gray-900 bg-white"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-amber-800 mb-0.5">Reason for Edit:</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Special negotiated rate for African caterer gala night"
+                        value={venueDryHirePriceOverrideReason}
+                        onChange={(e) => setVenueDryHirePriceOverrideReason(e.target.value)}
+                        className="w-full border border-amber-200 rounded-lg px-2.5 py-1.5 text-[11px] bg-white"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Adult Guests */}
@@ -1386,9 +1691,15 @@ export default function ManualBookingForm({
                 <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1">
                   <span>Rate:</span>
                   <span className="font-bold text-amber-800">
-                    £{effectivePackagePrice}/adult
-                    {packagePriceOverride !== null && (
-                      <span className="line-through text-gray-400 font-normal ml-1.5">£{defaultPackagePricePerPerson}</span>
+                    {bookingCategory === 'venue_dry_hire' && packagePriceOverride === null ? (
+                      '£0/adult (Catering not included)'
+                    ) : (
+                      <>
+                        £{effectivePackagePrice}/adult
+                        {packagePriceOverride !== null && (
+                          <span className="line-through text-gray-400 font-normal ml-1.5">£{defaultPackagePricePerPerson}</span>
+                        )}
+                      </>
                     )}
                   </span>
                 </div>
@@ -3657,12 +3968,30 @@ export default function ManualBookingForm({
 
               {/* Order breakdown */}
               <div className="text-xs space-y-2 text-gray-700">
-                <div className="flex justify-between">
-                  <span>
-                    Adult Catering ({customerDetails.adults} × £{effectivePackagePrice}):
-                  </span>
-                  <span className="font-semibold">£{adultFoodTotal.toLocaleString()}</span>
-                </div>
+                {bookingCategory === 'venue_dry_hire' && (
+                  <div className="flex justify-between text-amber-900 bg-amber-50/80 p-2 rounded-lg border border-amber-200">
+                    <span className="font-semibold">
+                      Venue Dry Hire ({selectedVenueDryHireItem?.name}):
+                    </span>
+                    <span className="font-extrabold text-[#C8860A]">£{effectiveVenueDryHirePrice.toLocaleString()}</span>
+                  </div>
+                )}
+
+                {adultFoodTotal > 0 ? (
+                  <div className="flex justify-between">
+                    <span>
+                      Adult Catering ({customerDetails.adults} × £{effectivePackagePrice}):
+                    </span>
+                    <span className="font-semibold">£{adultFoodTotal.toLocaleString()}</span>
+                  </div>
+                ) : (
+                  bookingCategory === 'venue_dry_hire' && (
+                    <div className="flex justify-between text-gray-500 italic text-[11px]">
+                      <span>Adult Food Catering ({customerDetails.adults} guests):</span>
+                      <span>Not included (External Caterer)</span>
+                    </div>
+                  )
+                )}
 
                 {Number(customerDetails.kids4to10) > 0 && (
                   <div className="flex justify-between text-gray-600">

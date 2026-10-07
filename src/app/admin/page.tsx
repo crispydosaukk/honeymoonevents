@@ -2936,6 +2936,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 ...editableLiveCounter,
               }}
               venueHallCharges={editableVenueCharges}
+              dryHirePrices={editableDryHirePrices}
               kidsPricing={editableKidsPricing}
               editingBooking={editingBookingForManual}
               onBookingUpdated={(updated) => {
