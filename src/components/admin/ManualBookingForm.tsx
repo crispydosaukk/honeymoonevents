@@ -41,8 +41,8 @@ export type IndianMenuType = typeof DEFAULT_INDIAN_MENU;
 export type SriLankanMenuType = typeof DEFAULT_SRI_LANKAN_MENU;
 export type LiveCounterPackageType = typeof DEFAULT_LIVE_COUNTER_PACKAGE;
 export type VenueHallChargeItem = typeof DEFAULT_VENUE_HALL_CHARGES[0];
-export type DryHirePriceItem = typeof DEFAULT_DRY_HIRE_PRICES[0];
 export type KidsPricingItem = typeof DEFAULT_KIDS_PRICING[0];
+export type DryHirePriceItem = typeof DEFAULT_DRY_HIRE_PRICES[0];
 
 export interface ManualBookingFormProps {
   configuredExtraCharges?: ConfiguredExtraCharge[];
@@ -108,7 +108,7 @@ export default function ManualBookingForm({
   // ── Step State (1: Customer, 2: Menu, 3: Pricing & Payment, 4: Confirmed) ──
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
 
-  // ── Step 1: Customer & Event Details ──
+  // ── Step 1: Customer & Event Details (NO AUTO-SELECTION BY DEFAULT) ──
   const [customerDetails, setCustomerDetails] = useState<{
     name: string;
     phone: string;
@@ -126,12 +126,12 @@ export default function ManualBookingForm({
     name: '',
     phone: '',
     email: '',
-    eventType: 'Wedding',
+    eventType: '',
     customEventType: '',
     date: '',
-    timeSession: '6:00 PM',
+    timeSession: '',
     customTime: '',
-    adults: 100,
+    adults: '',
     kids4to10: 0,
     kidsUnder4: 0,
     notes: '',
@@ -139,17 +139,79 @@ export default function ManualBookingForm({
   const [phoneError, setPhoneError] = useState('');
   const [step1Errors, setStep1Errors] = useState<Record<string, string>>({});
 
-  // ── Step 2: Menu & Package Selection ──
-  const [menuTab, setMenuTab] = useState<'packages' | 'indian' | 'srilankan' | 'live' | 'hall' | 'extra_menu'>('packages');
-  const [selectedPackageId, setSelectedPackageId] = useState<string>('silver');
-  const [selectedPackageCustomPrice, setSelectedPackageCustomPrice] = useState<number | string>(35);
+  // ── All Banquet Packages State (Allows adding custom packages & inline editing) ──
+  const [allBanquetPackages, setAllBanquetPackages] = useState<BanquetPackageItem[]>(banquetPackages);
 
-  // ── Venue Dry Hire (Enquiry Options & Rate Flexibility) ──
-  const [bookingCategory, setBookingCategory] = useState<'banquet' | 'venue_dry_hire'>('banquet');
-  const [selectedVenueDryHireId, setSelectedVenueDryHireId] = useState<string>('dry-saturday-dinner');
-  const [venueDryHirePriceOverride, setVenueDryHirePriceOverride] = useState<number | string | null>(null);
-  const [venueDryHirePriceOverrideReason, setVenueDryHirePriceOverrideReason] = useState<string>('');
-  const [showVenueDryHirePriceEditor, setShowVenueDryHirePriceEditor] = useState<boolean>(false);
+  useEffect(() => {
+    setAllBanquetPackages(banquetPackages);
+  }, [banquetPackages]);
+
+  // Modal / Form state for Adding & Editing Packages
+  const [showAddPackageModal, setShowAddPackageModal] = useState(false);
+  const [editingPackageModal, setEditingPackageModal] = useState<BanquetPackageItem | null>(null);
+  const [packageForm, setPackageForm] = useState({
+    name: '',
+    pricePerPerson: '',
+    kidsPrice: '',
+    tag: '',
+    guestLabel: '',
+    vegStarters: 2,
+    nonVegStarters: 2,
+    vegMains: 2,
+    nonVegMains: 2,
+    desserts: '1 Indian Sweet Dish',
+    drinks: 'Soft Drinks & Bottled Water',
+  });
+
+  // ── Custom Dishes added directly in Indian & Sri Lankan Menus ──
+  const [customDishes, setCustomDishes] = useState<{
+    vegStarters: string[];
+    nonVegStarters: string[];
+    vegMains: string[];
+    nonVegMains: string[];
+    sundries: string[];
+    desserts: string[];
+  }>({
+    vegStarters: [],
+    nonVegStarters: [],
+    vegMains: [],
+    nonVegMains: [],
+    sundries: [],
+    desserts: [],
+  });
+  const [newCustomDishInputs, setNewCustomDishInputs] = useState<Record<string, string>>({});
+
+  const handleAddCustomDish = (category: keyof typeof customDishes, dishName: string) => {
+    const trimmed = (dishName || '').trim();
+    if (!trimmed) return;
+    setCustomDishes((prev) => ({
+      ...prev,
+      [category]: [...prev[category], trimmed],
+    }));
+    // Automatically select the added custom dish
+    if (category === 'vegStarters') setSelectedVegStarters((prev) => [...prev, trimmed]);
+    else if (category === 'nonVegStarters') setSelectedNonVegStarters((prev) => [...prev, trimmed]);
+    else if (category === 'vegMains') setSelectedVegMains((prev) => [...prev, trimmed]);
+    else if (category === 'nonVegMains') setSelectedNonVegMains((prev) => [...prev, trimmed]);
+    else if (category === 'sundries') setSelectedSundries((prev) => [...prev, trimmed]);
+    else if (category === 'desserts') setSelectedDesserts((prev) => [...prev, trimmed]);
+  };
+
+  // ── Custom Venue Hall Charges state ──
+  const [customHallCharges, setCustomHallCharges] = useState<{
+    label: string;
+    amount: number;
+    note?: string;
+  }[]>([]);
+  const [newHallChargeLabel, setNewHallChargeLabel] = useState('');
+  const [newHallChargeAmount, setNewHallChargeAmount] = useState('');
+  const [newHallChargeNote, setNewHallChargeNote] = useState('');
+  const [showAddHallCharge, setShowAddHallCharge] = useState(false);
+
+  // ── Step 2: Menu & Package Selection (NO AUTO-SELECTION BY DEFAULT) ──
+  const [menuTab, setMenuTab] = useState<'packages' | 'indian' | 'srilankan' | 'live' | 'hall' | 'extra_menu'>('packages');
+  const [selectedPackageId, setSelectedPackageId] = useState<string>('');
+  const [selectedPackageCustomPrice, setSelectedPackageCustomPrice] = useState<number | string>('');
 
   // ── Price Overrides & Flexibility (Local to Manual Booking Flow Only) ──
   // Adult / Package rate override
@@ -271,28 +333,15 @@ export default function ManualBookingForm({
       notes: editingBooking.notes || '',
     });
 
-    const pkgName = (editingBooking.selectedMenu || editingBooking.package || '').trim();
-    if (pkgName.toLowerCase().includes('dry hire') || pkgName.toLowerCase().includes('venue hall')) {
-      setBookingCategory('venue_dry_hire');
-      if (editingBooking.priceOverrides?.venueDryHire?.optionId) {
-        setSelectedVenueDryHireId(editingBooking.priceOverrides.venueDryHire.optionId);
-      }
-      if (editingBooking.priceOverrides?.venueDryHire?.custom !== undefined) {
-        setVenueDryHirePriceOverride(editingBooking.priceOverrides.venueDryHire.custom);
-        setVenueDryHirePriceOverrideReason(editingBooking.priceOverrides.venueDryHire.reason || '');
-        setShowVenueDryHirePriceEditor(true);
-      }
-    } else {
-      setBookingCategory('banquet');
-      const foundPkg = banquetPackages.find(
-        (p) => p.name.toLowerCase() === pkgName.toLowerCase()
-      );
-      if (foundPkg) {
-        setSelectedPackageId(foundPkg.id);
-      } else if (pkgName) {
-        setSelectedPackageId('custom');
-        setSelectedPackageCustomPrice(editingBooking.pricePerPerson || 35);
-      }
+    const pkgName = editingBooking.selectedMenu || editingBooking.package;
+    const foundPkg = banquetPackages.find(
+      (p) => p.name.toLowerCase() === (pkgName || '').toLowerCase()
+    );
+    if (foundPkg) {
+      setSelectedPackageId(foundPkg.id);
+    } else if (pkgName) {
+      setSelectedPackageId('custom');
+      setSelectedPackageCustomPrice(editingBooking.pricePerPerson || 35);
     }
 
     if (editingBooking.priceOverrides) {
@@ -386,68 +435,11 @@ export default function ManualBookingForm({
     }
   }, [editingBooking, banquetPackages]);
 
-  // ── Venue Dry Hire Options (Combined from enquiry options, dry hire prices & venue hall charges) ──
-  const venueDryHireOptions = useMemo(() => {
-    const list: { id: string; name: string; group: 'Dry Hire' | 'Venue Hall' | 'Enquiry Form'; price: number; detail?: string }[] = [];
-
-    // Dry Hire Prices (from menu settings / data)
-    (dryHirePrices || DEFAULT_DRY_HIRE_PRICES).forEach((dh) => {
-      const idKey = `dry-${dh.day.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${dh.session.toLowerCase()}`;
-      list.push({
-        id: idKey,
-        name: `Dry Hire — ${dh.day} (${dh.session})`,
-        group: 'Dry Hire',
-        price: dh.price,
-        detail: `${dh.day} ${dh.session} (Outside Catering)`,
-      });
-    });
-
-    // Venue Hall Charges (from menu settings / data)
-    (venueHallCharges || DEFAULT_VENUE_HALL_CHARGES).forEach((vh, idx) => {
-      const priceMatch = vh.charge.match(/£(\d+)/);
-      const parsedAmount = priceMatch ? parseInt(priceMatch[1]) : 250;
-      const idKey = `hall-${vh.day.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${idx}`;
-      list.push({
-        id: idKey,
-        name: `Venue Hall — ${vh.day}${vh.note ? ` (${vh.note})` : ''}`,
-        group: 'Venue Hall',
-        price: parsedAmount,
-        detail: vh.note ? `${vh.note} · Hall Hire` : 'Hall Hire Fee',
-      });
-    });
-
-    // Enquiry Dropdown options
-    list.push({
-      id: 'enquiry-venue-hall',
-      name: 'Venue Hall (Enquiry Standard)',
-      group: 'Enquiry Form',
-      price: 250,
-      detail: 'Standard Venue Hall Hire from Enquiry Form',
-    });
-    list.push({
-      id: 'enquiry-dry-hire',
-      name: 'Dry Hire (Enquiry Standard)',
-      group: 'Enquiry Form',
-      price: 1500,
-      detail: 'Standard Dry Hire Option from Enquiry Form',
-    });
-
-    return list;
-  }, [dryHirePrices, venueHallCharges]);
-
-  const selectedVenueDryHireItem = useMemo(() => {
-    return venueDryHireOptions.find((opt) => opt.id === selectedVenueDryHireId) || venueDryHireOptions[0];
-  }, [venueDryHireOptions, selectedVenueDryHireId]);
-
-  const defaultVenueDryHirePrice = selectedVenueDryHireItem?.price || 1500;
-  const effectiveVenueDryHirePrice = (venueDryHirePriceOverride !== null && venueDryHirePriceOverride !== '')
-    ? Number(venueDryHirePriceOverride)
-    : defaultVenueDryHirePrice;
-
-  // Current package object
+  // Current package object (null if no package selected)
   const currentPackage = useMemo(() => {
-    return banquetPackages.find((p) => p.id === selectedPackageId) || banquetPackages[2] || banquetPackages[0];
-  }, [banquetPackages, selectedPackageId]);
+    if (!selectedPackageId || selectedPackageId === 'custom') return null;
+    return allBanquetPackages.find((p) => p.id === selectedPackageId) || null;
+  }, [allBanquetPackages, selectedPackageId]);
 
   // UK Phone formatting & validation
   const validatePhone = (val: string) => {
@@ -469,36 +461,34 @@ export default function ManualBookingForm({
 
   // Kids default price per head from settings (dynamically resolved for the selected package)
   const defaultKidsPrice = useMemo(() => {
+    if (!currentPackage) return 0;
     const directKidsPrice = currentPackage && (currentPackage as any).kidsPrice ? Number((currentPackage as any).kidsPrice) : undefined;
     const pkgName = selectedPackageId === 'custom' ? 'Custom' : currentPackage?.name;
     return getKidsPriceFromList(kidsPricing, pkgName, directKidsPrice);
   }, [kidsPricing, currentPackage, selectedPackageId]);
 
   // Base Package rate per head
-  const defaultPackagePricePerPerson = bookingCategory === 'venue_dry_hire'
-    ? 0
-    : (selectedPackageId === 'custom' ? Number(selectedPackageCustomPrice || 0) : currentPackage?.pricePerPerson || 35);
+  const defaultPackagePricePerPerson = selectedPackageId === 'custom'
+    ? Number(selectedPackageCustomPrice || 0)
+    : (currentPackage?.pricePerPerson || 0);
 
   // ── Effective Prices (with custom overrides if set) ──
   const effectivePackagePrice = (packagePriceOverride !== null && packagePriceOverride !== '') ? Number(packagePriceOverride) : defaultPackagePricePerPerson;
   const effectiveKidsPrice = (kidsPriceOverride !== null && kidsPriceOverride !== '') ? Number(kidsPriceOverride) : defaultKidsPrice;
   const effectiveKidsUnder4Price = (kidsUnder4PriceOverride !== null && kidsUnder4PriceOverride !== '') ? Number(kidsUnder4PriceOverride) : 0;
 
-  // Food calculations
-  const adultFoodTotal = Number(customerDetails.adults || 0) * effectivePackagePrice;
-  const kidsFoodTotal = Number(customerDetails.kids4to10 || 0) * effectiveKidsPrice;
-  const kidsUnder4FoodTotal = Number(customerDetails.kidsUnder4 || 0) * effectiveKidsUnder4Price;
+  // Food calculations (zero by default if no package is chosen)
+  const adultFoodTotal = selectedPackageId ? (Number(customerDetails.adults || 0) * effectivePackagePrice) : 0;
+  const kidsFoodTotal = selectedPackageId ? (Number(customerDetails.kids4to10 || 0) * effectiveKidsPrice) : 0;
+  const kidsUnder4FoodTotal = selectedPackageId ? (Number(customerDetails.kidsUnder4 || 0) * effectiveKidsUnder4Price) : 0;
   const foodBaseAmount = adultFoodTotal + kidsFoodTotal + kidsUnder4FoodTotal;
-
-  // Venue Dry Hire fee
-  const venueDryHireTotal = bookingCategory === 'venue_dry_hire' ? effectiveVenueDryHirePrice : 0;
 
   // Live counters, extras, hall, and extra menu items totals
   const liveCountersTotal = selectedLiveCounters.reduce((acc, item) => acc + Number(item.price || 0), 0);
   const extrasTotal = selectedExtras.reduce((acc, item) => acc + Number(item.price || 0), 0);
   const hallTotal = selectedHallOption ? Number(selectedHallOption.amount || 0) : 0;
   const extraMenuItemsTotal = extraMenuItems.reduce((acc, item) => acc + Number(item.cost || 0), 0);
-  const subtotalBeforeExtras = foodBaseAmount + venueDryHireTotal + hallTotal + liveCountersTotal + extrasTotal + extraMenuItemsTotal;
+  const subtotalBeforeExtras = foodBaseAmount + hallTotal + liveCountersTotal + extrasTotal + extraMenuItemsTotal;
 
   // Extra charges total
   const extraChargesTotal = bookingExtraCharges.reduce((acc, item) => acc + Number(item.amount || 0), 0);
@@ -535,15 +525,6 @@ export default function ManualBookingForm({
   // ── Active Price Overrides List for Audit & Transparency ──
   const activePriceOverridesList = useMemo(() => {
     const list: { title: string; original: number; custom: number; reason: string; category: string }[] = [];
-    if (bookingCategory === 'venue_dry_hire' && venueDryHirePriceOverride !== null && venueDryHirePriceOverride !== '' && Number(venueDryHirePriceOverride) !== defaultVenueDryHirePrice) {
-      list.push({
-        title: `Venue Dry Hire (${selectedVenueDryHireItem?.name})`,
-        original: defaultVenueDryHirePrice,
-        custom: Number(venueDryHirePriceOverride),
-        reason: venueDryHirePriceOverrideReason.trim() || 'Custom venue hire fee override',
-        category: 'Venue Dry Hire',
-      });
-    }
     if (packagePriceOverride !== null && packagePriceOverride !== '' && Number(packagePriceOverride) !== defaultPackagePricePerPerson) {
       list.push({
         title: `Package Rate (${currentPackage?.name || 'Package'})`,
@@ -630,24 +611,9 @@ export default function ManualBookingForm({
     bookingExtraCharges,
   ]);
 
-  // Sync default deposit when entering step 3
+  // Sync default deposit when entering step 3 (Do NOT auto-select extra charges)
   const handleEnterStep3 = () => {
-    if (!chargesInitialized && configuredExtraCharges.length > 0) {
-      const initialCharges: { label: string; amount: number; isPreset?: boolean; defaultAmount?: number }[] = [];
-      configuredExtraCharges.forEach((c) => {
-        if (c.isDefault) {
-          const amt = c.type === 'percentage'
-            ? Math.round((subtotalBeforeExtras * c.amount) / 100)
-            : c.amount;
-          initialCharges.push({
-            label: c.label,
-            amount: amt,
-            defaultAmount: amt,
-            isPreset: true,
-          });
-        }
-      });
-      setBookingExtraCharges(initialCharges);
+    if (!chargesInitialized) {
       setChargesInitialized(true);
     }
 
@@ -684,14 +650,92 @@ export default function ManualBookingForm({
   const isDepositUnderLimit = paymentChoice === 'advance' && customDepositNum <= 0;
   const isAdvanceDepositInvalid = isDepositOverLimit || isDepositUnderLimit;
 
+  // ── Helper to render dish checklist with custom dishes & inline addition ──
+  const renderDishChecklist = (
+    prefix: string,
+    categoryKey: keyof typeof customDishes,
+    stockDishes: string[],
+    selectedDishes: string[],
+    setSelectedDishes: React.Dispatch<React.SetStateAction<string[]>>,
+    theme: 'emerald' | 'red' | 'gray' = 'emerald'
+  ) => {
+    const allItems = [...stockDishes, ...customDishes[categoryKey]];
+    const themeBg = theme === 'emerald' ? 'hover:bg-emerald-50' : theme === 'red' ? 'hover:bg-red-50' : 'hover:bg-gray-50';
+    const textChecked = theme === 'emerald' ? 'text-emerald-950 font-semibold' : theme === 'red' ? 'text-red-950 font-semibold' : 'text-gray-900 font-semibold';
+    const inputKey = `${prefix}_${categoryKey}`;
+
+    return (
+      <div className="space-y-2">
+        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+          {allItems.map((dish) => {
+            const checked = selectedDishes.includes(dish);
+            const isCustom = customDishes[categoryKey].includes(dish);
+            return (
+              <label key={dish} className={`flex items-center justify-between text-xs text-gray-700 cursor-pointer p-1 rounded ${themeBg}`}>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleItem(selectedDishes, setSelectedDishes, dish)}
+                    className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                  />
+                  <span className={checked ? textChecked : ''}>{dish}</span>
+                </div>
+                {isCustom && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                    Custom
+                  </span>
+                )}
+              </label>
+            );
+          })}
+        </div>
+        <div className="pt-2 border-t border-gray-100 flex gap-1.5">
+          <input
+            type="text"
+            placeholder="+ Custom dish name..."
+            value={newCustomDishInputs[inputKey] || ''}
+            onChange={(e) => setNewCustomDishInputs((prev) => ({ ...prev, [inputKey]: e.target.value }))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                const val = (newCustomDishInputs[inputKey] || '').trim();
+                if (val) {
+                  handleAddCustomDish(categoryKey, val);
+                  setNewCustomDishInputs((prev) => ({ ...prev, [inputKey]: '' }));
+                }
+              }
+            }}
+            className="flex-1 px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const val = (newCustomDishInputs[inputKey] || '').trim();
+              if (val) {
+                handleAddCustomDish(categoryKey, val);
+                setNewCustomDishInputs((prev) => ({ ...prev, [inputKey]: '' }));
+              }
+            }}
+            className="px-2.5 py-1 text-xs font-bold text-white rounded-lg shadow-2xs transition-colors whitespace-nowrap"
+            style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // ── Validation for Step 1 ──
   const validateStep1 = () => {
     const errors: Record<string, string> = {};
     if (!customerDetails.name.trim()) errors.name = 'Customer full name is required.';
     if (!customerDetails.phone.trim()) errors.phone = 'Phone number is required.';
     if (phoneError) errors.phone = phoneError;
+    if (!customerDetails.eventType) errors.eventType = 'Event type is required.';
     if (!customerDetails.date) errors.date = 'Event date is required.';
-    if (Number(customerDetails.adults) < 1) errors.adults = 'At least 1 adult guest required.';
+    if (customerDetails.adults === '' || Number(customerDetails.adults) < 1) errors.adults = 'At least 1 adult guest required.';
 
     setStep1Errors(errors);
     return Object.keys(errors).length === 0;
@@ -733,29 +777,18 @@ export default function ManualBookingForm({
       adults: Number(customerDetails.adults),
       kids4to10: Number(customerDetails.kids4to10),
       kidsUnder4: Number(customerDetails.kidsUnder4),
-      package: bookingCategory === 'venue_dry_hire'
-        ? (selectedVenueDryHireItem?.name || 'Venue Dry Hire')
-        : (currentPackage?.name || 'Custom Package'),
-      selectedMenu: bookingCategory === 'venue_dry_hire'
-        ? (selectedVenueDryHireItem?.name || 'Venue Dry Hire')
-        : (currentPackage?.name || 'Custom Package'),
+      package: currentPackage?.name || 'Custom Package',
+      selectedMenu: currentPackage?.name || 'Custom Package',
       pricePerPerson: effectivePackagePrice,
       kidsPricePerPerson: effectiveKidsPrice,
       kidsUnder4PricePerPerson: effectiveKidsUnder4Price,
-      baseAmount: foodBaseAmount + venueDryHireTotal,
+      baseAmount: foodBaseAmount,
       deposit: amountPaid,
       depositPaid: isDepositOnly || paymentChoice !== 'pending',
       finalPaymentPaid: !isDepositOnly && paymentChoice === 'full',
       status: paymentChoice === 'full' ? 'completed' : isDepositOnly ? 'deposit_confirmed' : 'new_enquiry',
       notes: customerDetails.notes.trim() + (auditNotes.length > 0 ? (customerDetails.notes.trim() ? '\n\n' : '') + '🏷️ Price Adjustments:\n' + auditNotes.join('\n') : ''),
       priceOverrides: {
-        venueDryHire: bookingCategory === 'venue_dry_hire' && venueDryHirePriceOverride !== null ? {
-          optionId: selectedVenueDryHireId,
-          name: selectedVenueDryHireItem?.name,
-          original: defaultVenueDryHirePrice,
-          custom: effectiveVenueDryHirePrice,
-          reason: venueDryHirePriceOverrideReason.trim() || 'Custom venue hire fee override',
-        } : null,
         package: packagePriceOverride !== null ? {
           original: defaultPackagePricePerPerson,
           custom: effectivePackagePrice,
@@ -782,6 +815,13 @@ export default function ManualBookingForm({
         extraCharges: bookingExtraCharges.filter((c) => c.isCustomAmount || c.reason),
       },
       customPriceReasons: auditNotes,
+      includeVenueHall: !!selectedHallOption,
+      venueHallCharge: selectedHallOption ? {
+        label: selectedHallOption.label,
+        amount: selectedHallOption.amount,
+        isCustom: selectedHallOption.isCustomAmount,
+        reason: selectedHallOption.reason,
+      } : null,
       extraCharges: [
         ...(selectedHallOption ? [{
           label: `Hall Hire: ${selectedHallOption.label}${selectedHallOption.reason ? ` (${selectedHallOption.reason})` : ''}`,
@@ -945,16 +985,12 @@ export default function ManualBookingForm({
         adults: Number(customerDetails.adults) || 0,
         kids4to10: Number(customerDetails.kids4to10) || 0,
         kidsUnder4: Number(customerDetails.kidsUnder4) || 0,
-        package: bookingCategory === 'venue_dry_hire'
-          ? (selectedVenueDryHireItem?.name || 'Venue Dry Hire')
-          : (currentPackage?.name || 'Custom Package'),
-        selectedMenu: bookingCategory === 'venue_dry_hire'
-          ? (selectedVenueDryHireItem?.name || 'Venue Dry Hire')
-          : (currentPackage?.name || 'Custom Package'),
+        package: currentPackage?.name || 'Custom Package',
+        selectedMenu: currentPackage?.name || 'Custom Package',
         pricePerPerson: effectivePackagePrice,
         kidsPricePerPerson: effectiveKidsPrice,
         kidsUnder4PricePerPerson: effectiveKidsUnder4Price,
-        baseAmount: foodBaseAmount + venueDryHireTotal,
+        baseAmount: foodBaseAmount,
         deposit: amountPaid,
         depositPaid: isDepositPaid,
         finalPaymentPaid: isFinalPaid,
@@ -963,13 +999,6 @@ export default function ManualBookingForm({
         ...(isFinalPaid ? { orderClosedAt: new Date().toISOString() } : {}),
         notes: customerDetails.notes.trim() + (auditNotes.length > 0 ? (customerDetails.notes.trim() ? '\n\n' : '') + '🏷️ Price Adjustments:\n' + auditNotes.join('\n') : (paymentReference ? `\nPayment Ref: ${paymentReference}` : '')),
         priceOverrides: {
-          venueDryHire: bookingCategory === 'venue_dry_hire' && venueDryHirePriceOverride !== null ? {
-            optionId: selectedVenueDryHireId,
-            name: selectedVenueDryHireItem?.name,
-            original: defaultVenueDryHirePrice,
-            custom: effectiveVenueDryHirePrice,
-            reason: venueDryHirePriceOverrideReason.trim() || 'Custom venue hire fee override',
-          } : null,
           package: packagePriceOverride !== null ? {
             original: defaultPackagePricePerPerson,
             custom: effectivePackagePrice,
@@ -996,6 +1025,13 @@ export default function ManualBookingForm({
           extraCharges: bookingExtraCharges.filter((c) => c.isCustomAmount || c.reason),
         },
         customPriceReasons: auditNotes,
+        includeVenueHall: !!selectedHallOption,
+        venueHallCharge: selectedHallOption ? {
+          label: selectedHallOption.label,
+          amount: selectedHallOption.amount,
+          isCustom: selectedHallOption.isCustomAmount,
+          reason: selectedHallOption.reason,
+        } : null,
         extraCharges: [
           ...(selectedHallOption ? [{
             label: `Hall Hire: ${selectedHallOption.label}${selectedHallOption.reason ? ` (${selectedHallOption.reason})` : ''}`,
@@ -1092,17 +1128,18 @@ export default function ManualBookingForm({
       name: '',
       phone: '',
       email: '',
-      eventType: 'Wedding',
+      eventType: '',
       customEventType: '',
       date: '',
-      timeSession: '6:00 PM',
+      timeSession: '',
       customTime: '',
-      adults: 100,
+      adults: '',
       kids4to10: 0,
       kidsUnder4: 0,
       notes: '',
     });
-    setSelectedPackageId('silver');
+    setSelectedPackageId('');
+    setSelectedPackageCustomPrice('');
     setPackagePriceOverride(null);
     setPackagePriceOverrideReason('');
     setShowPackagePriceEditor(false);
@@ -1319,14 +1356,16 @@ export default function ManualBookingForm({
               <select
                 value={customerDetails.eventType}
                 onChange={(e) => setCustomerDetails({ ...customerDetails, eventType: e.target.value })}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+                className={`w-full border rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium ${step1Errors.eventType ? 'border-red-300 ring-1 ring-red-300' : 'border-gray-200'}`}
               >
+                <option value="">-- Select Event Type --</option>
                 {EVENT_TYPES.map((t) => (
                   <option key={t} value={t}>
                     {t}
                   </option>
                 ))}
               </select>
+              {step1Errors.eventType && <p className="text-xs text-red-500 mt-1">{step1Errors.eventType}</p>}
               {customerDetails.eventType === 'Other' && (
                 <input
                   type="text"
@@ -1371,6 +1410,7 @@ export default function ManualBookingForm({
                 onChange={(e) => setCustomerDetails({ ...customerDetails, timeSession: e.target.value })}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
               >
+                <option value="">-- Select Time / Session --</option>
                 {TIME_SESSIONS.map((ts) => (
                   <option key={ts.value} value={ts.value}>
                     {ts.label}
@@ -1390,53 +1430,91 @@ export default function ManualBookingForm({
           </div>
 
           {/* ── Package Selection (in Step 1) ── */}
-          <div className="bg-amber-50/40 border border-amber-200/60 rounded-xl p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/50 pb-3">
+          <div className="bg-amber-50/40 border border-amber-200/60 rounded-xl p-5 space-y-3.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/50 pb-3">
               <div>
                 <span className="text-xs font-bold text-amber-900 uppercase tracking-wide flex items-center gap-1.5">
                   <Icon name="SparklesIcon" size={16} />
-                  Select Banquet Package or Venue Hire *
+                  Select Banquet Package (Optional / None by Default)
                 </span>
                 <p className="text-[11px] text-amber-800/80 mt-0.5">
-                  Choose catering package or venue dry hire. The rates and breakdown will update automatically.
+                  Click a package to select or click again to remove. You can also create a custom package.
                 </p>
               </div>
-              <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-200/70 text-amber-950 border border-amber-300">
-                Selected: {bookingCategory === 'venue_dry_hire' ? `${selectedVenueDryHireItem?.name} · £${effectiveVenueDryHirePrice}` : `${currentPackage?.name} · £${effectivePackagePrice}/pp`}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-bold px-3 py-1 rounded-full border ${selectedPackageId ? 'bg-amber-200/70 text-amber-950 border-amber-300' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                  {selectedPackageId ? `Selected: ${currentPackage?.name || 'Custom'} · £${effectivePackagePrice}/pp` : 'No Package Selected'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowAddPackageModal(true)}
+                  className="text-xs font-bold text-[#C8860A] bg-white hover:bg-amber-50 border border-amber-300 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-2xs"
+                >
+                  <Icon name="PlusIcon" size={12} />
+                  <span>Custom Package</span>
+                </button>
+              </div>
             </div>
 
-            {/* Unified 4-Column Grid: Row 1 = 4 Banquet Cards, Row 2 = 2 Banquet Cards + 1 Venue Dry Hire Card (spanning 2 cols) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {/* Cards 1 to 6: All 6 Banquet Packages Restored */}
-              {banquetPackages.map((pkg) => {
-                const isSelected = bookingCategory === 'banquet' && selectedPackageId === pkg.id;
+            {/* Package Cards Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+              {allBanquetPackages.map((pkg) => {
+                const isSelected = selectedPackageId === pkg.id;
                 return (
                   <div
                     key={pkg.id}
                     onClick={() => {
-                      setBookingCategory('banquet');
-                      if (selectedPackageId !== pkg.id) {
+                      if (selectedPackageId === pkg.id) {
+                        setSelectedPackageId('');
+                        setPackagePriceOverride(null);
+                        setPackagePriceOverrideReason('');
+                      } else {
                         setSelectedPackageId(pkg.id);
                         setPackagePriceOverride(null);
                         setPackagePriceOverrideReason('');
                       }
                     }}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
+                    className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
                       isSelected
-                        ? 'border-amber-500 bg-amber-50/80 ring-2 ring-amber-400 shadow-sm'
+                        ? 'border-amber-500 bg-amber-50/70 ring-2 ring-amber-400 shadow-sm'
                         : 'border-gray-200 bg-white hover:border-amber-300 hover:shadow-xs'
                     }`}
                   >
                     <div>
                       <div className="flex items-start justify-between gap-1">
-                        <span className="font-bold text-gray-900 text-sm leading-tight">{pkg.name}</span>
-                        <div
-                          className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center ${
-                            isSelected ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300'
-                          }`}
-                        >
-                          {isSelected && <Icon name="CheckIcon" size={10} />}
+                        <span className="font-bold text-gray-900 text-xs leading-tight">{pkg.name}</span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingPackageModal(pkg);
+                              setPackageForm({
+                                name: pkg.name,
+                                pricePerPerson: String(pkg.pricePerPerson),
+                                kidsPrice: String((pkg as any).kidsPrice || getKidsPriceFromList(kidsPricing, pkg.name)),
+                                tag: pkg.tag || '',
+                                guestLabel: pkg.guestLabel || '',
+                                vegStarters: pkg.starters?.veg || 2,
+                                nonVegStarters: pkg.starters?.nonVeg || 2,
+                                vegMains: pkg.mains?.veg || 2,
+                                nonVegMains: pkg.mains?.nonVeg || 2,
+                                desserts: (pkg.desserts || []).join(', '),
+                                drinks: (pkg.drinks || []).join(', '),
+                              });
+                            }}
+                            className="p-0.5 text-gray-400 hover:text-amber-700 rounded"
+                            title="Edit this package"
+                          >
+                            <Icon name="PencilSquareIcon" size={11} />
+                          </button>
+                          <div
+                            className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center ${
+                              isSelected ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300'
+                            }`}
+                          >
+                            {isSelected && <Icon name="CheckIcon" size={10} />}
+                          </div>
                         </div>
                       </div>
                       {pkg.tag && (
@@ -1445,118 +1523,20 @@ export default function ManualBookingForm({
                         </span>
                       )}
                     </div>
-                    <div className="mt-3 pt-2 border-t border-gray-100 flex items-baseline justify-between text-xs">
+                    <div className="mt-2 pt-1.5 border-t border-gray-100 flex items-baseline justify-between text-xs">
                       <div>
-                        <span className="text-base font-extrabold text-[#C8860A]">
+                        <span className="text-sm font-extrabold text-[#C8860A]">
                           £{pkg.pricePerPerson}
                         </span>
-                        <span className="text-[11px] text-gray-400 ml-0.5">/adult</span>
+                        <span className="text-[10px] text-gray-400 ml-0.5">/adult</span>
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100/70 text-amber-900 border border-amber-200">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100/70 text-amber-900 border border-amber-200">
                         Kids: £{(pkg as any).kidsPrice || getKidsPriceFromList(kidsPricing, pkg.name)}
                       </span>
                     </div>
                   </div>
                 );
               })}
-
-              {/* Card 7: Venue Dry Hire Card with embedded Dropdown (Spans 2 columns on lg & sm) */}
-              {(() => {
-                const isSelected = bookingCategory === 'venue_dry_hire';
-                return (
-                  <div
-                    onClick={() => {
-                      setBookingCategory('venue_dry_hire');
-                    }}
-                    className={`col-span-1 sm:col-span-2 lg:col-span-2 p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
-                      isSelected
-                        ? 'border-amber-500 bg-amber-50/90 ring-2 ring-amber-400 shadow-sm'
-                        : 'border-amber-300/80 bg-white hover:border-amber-400 hover:shadow-xs'
-                    }`}
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-base">🏛️</span>
-                          <span className="font-bold text-gray-900 text-sm leading-tight">Venue Dry Hire</span>
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
-                            Outside Catering / Hall
-                          </span>
-                        </div>
-                        <div
-                          className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center ${
-                            isSelected ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300'
-                          }`}
-                        >
-                          {isSelected && <Icon name="CheckIcon" size={10} />}
-                        </div>
-                      </div>
-
-                      {/* Dropdown with all previous enquiry options */}
-                      <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
-                        <label className="block text-[10px] font-bold text-amber-900 mb-1">
-                          Select Hire Option / Enquiry Session:
-                        </label>
-                        <select
-                          value={selectedVenueDryHireId}
-                          onChange={(e) => {
-                            setBookingCategory('venue_dry_hire');
-                            setSelectedVenueDryHireId(e.target.value);
-                            setVenueDryHirePriceOverride(null);
-                            setVenueDryHirePriceOverrideReason('');
-                          }}
-                          className="w-full border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-900 bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                        >
-                          <optgroup label="── Dry Hire (Outside Catering) ──">
-                            {venueDryHireOptions.filter(o => o.group === 'Dry Hire').map(o => (
-                              <option key={o.id} value={o.id}>{o.name} — £{o.price}</option>
-                            ))}
-                          </optgroup>
-                          <optgroup label="── Venue Hall Charges ──">
-                            {venueDryHireOptions.filter(o => o.group === 'Venue Hall').map(o => (
-                              <option key={o.id} value={o.id}>{o.name} — £{o.price}</option>
-                            ))}
-                          </optgroup>
-                          <optgroup label="── Enquiry Form Packages ──">
-                            {venueDryHireOptions.filter(o => o.group === 'Enquiry Form').map(o => (
-                              <option key={o.id} value={o.id}>{o.name} — £{o.price}</option>
-                            ))}
-                          </optgroup>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="mt-2.5 pt-2 border-t border-amber-200/60 flex items-baseline justify-between text-xs">
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-base font-extrabold text-[#C8860A]">
-                          £{effectiveVenueDryHirePrice}
-                        </span>
-                        <span className="text-[11px] text-gray-500 font-normal">fixed hire fee</span>
-                        {venueDryHirePriceOverride !== null && (
-                          <span className="line-through text-gray-400 text-[10px] ml-1">£{defaultVenueDryHirePrice}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-gray-500 font-medium">
-                          {selectedVenueDryHireItem?.detail}
-                        </span>
-                        {isSelected && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowVenueDryHirePriceEditor(true);
-                            }}
-                            className="text-[10px] font-bold text-[#C8860A] hover:underline bg-amber-100/70 px-1.5 py-0.5 rounded border border-amber-300"
-                          >
-                            Edit Rate ↓
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
           </div>
 
@@ -1576,93 +1556,6 @@ export default function ManualBookingForm({
                 Total Guests: {totalGuests}
               </span>
             </div>
-
-            {/* When Venue Dry Hire is selected: Display Dedicated Venue Dry Hire Fee Box with Edit Rate drawer (Image 3 style) */}
-            {bookingCategory === 'venue_dry_hire' && (
-              <div className="bg-white p-4 rounded-xl border-2 border-amber-300 space-y-2.5 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">🏛️</span>
-                    <div>
-                      <span className="text-xs font-bold text-gray-900">
-                        Venue Dry Hire Fee ({selectedVenueDryHireItem?.name}) *
-                      </span>
-                      <div className="text-[10px] text-gray-500 font-medium">
-                        Fixed hire fee for event date &amp; session · External caterer friendly
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowVenueDryHirePriceEditor(!showVenueDryHirePriceEditor)}
-                    className="text-[11px] font-semibold text-[#C8860A] hover:underline flex items-center gap-1 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200"
-                  >
-                    <Icon name="PencilSquareIcon" size={13} />
-                    {venueDryHirePriceOverride !== null ? 'Custom Rate' : 'Edit Rate'}
-                  </button>
-                </div>
-                <div className="flex items-center justify-between pt-1 border-t border-gray-100">
-                  <span className="text-xs text-gray-500 font-medium">Agreed Rate:</span>
-                  <div className="text-right">
-                    <span className="text-base font-extrabold text-[#C8860A]">
-                      £{effectiveVenueDryHirePrice}
-                    </span>
-                    <span className="text-[11px] text-gray-400 font-normal ml-1">fixed venue fee</span>
-                    {venueDryHirePriceOverride !== null && (
-                      <span className="line-through text-gray-400 font-normal ml-2 text-xs">
-                        £{defaultVenueDryHirePrice}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Inline Venue Dry Hire Price Override Drawer (Image 3 style) */}
-                {showVenueDryHirePriceEditor && (
-                  <div className="mt-2.5 p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2.5 text-xs animate-fade-in">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-amber-900">
-                        Custom Venue Dry Hire Fee ({selectedVenueDryHireItem?.name}):
-                      </span>
-                      {venueDryHirePriceOverride !== null && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setVenueDryHirePriceOverride(null);
-                            setVenueDryHirePriceOverrideReason('');
-                          }}
-                          className="text-[10px] text-red-600 hover:underline font-semibold"
-                        >
-                          Reset to £{defaultVenueDryHirePrice}
-                        </button>
-                      )}
-                    </div>
-                    <div>
-                      <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold">£</span>
-                        <input
-                          type="number"
-                          min={0}
-                          value={venueDryHirePriceOverride !== null ? venueDryHirePriceOverride : defaultVenueDryHirePrice}
-                          onChange={(e) => setVenueDryHirePriceOverride(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
-                          placeholder="Agreed venue dry hire fee"
-                          className="w-full pl-6 pr-2 py-1.5 border border-amber-300 rounded-lg text-xs font-bold text-gray-900 bg-white"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-medium text-amber-800 mb-0.5">Reason for Edit:</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Special negotiated rate for African caterer gala night"
-                        value={venueDryHirePriceOverrideReason}
-                        onChange={(e) => setVenueDryHirePriceOverrideReason(e.target.value)}
-                        className="w-full border border-amber-200 rounded-lg px-2.5 py-1.5 text-[11px] bg-white"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Adult Guests */}
@@ -1684,22 +1577,18 @@ export default function ManualBookingForm({
                   type="number"
                   min={1}
                   required
+                  placeholder="e.g. 100"
                   value={customerDetails.adults}
                   onChange={(e) => setCustomerDetails({ ...customerDetails, adults: e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0) })}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 font-bold text-gray-900"
+                  className={`w-full border rounded-xl px-3 py-2 text-sm bg-gray-50 font-bold text-gray-900 ${step1Errors.adults ? 'border-red-300 ring-1 ring-red-300' : 'border-gray-200'}`}
                 />
+                {step1Errors.adults && <p className="text-xs text-red-500 mt-0.5">{step1Errors.adults}</p>}
                 <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1">
                   <span>Rate:</span>
                   <span className="font-bold text-amber-800">
-                    {bookingCategory === 'venue_dry_hire' && packagePriceOverride === null ? (
-                      '£0/adult (Catering not included)'
-                    ) : (
-                      <>
-                        £{effectivePackagePrice}/adult
-                        {packagePriceOverride !== null && (
-                          <span className="line-through text-gray-400 font-normal ml-1.5">£{defaultPackagePricePerPerson}</span>
-                        )}
-                      </>
+                    £{effectivePackagePrice}/adult
+                    {packagePriceOverride !== null && (
+                      <span className="line-through text-gray-400 font-normal ml-1.5">£{defaultPackagePricePerPerson}</span>
                     )}
                   </span>
                 </div>
@@ -1979,191 +1868,226 @@ export default function ManualBookingForm({
               <div className="space-y-4">
                 <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <p className="font-semibold">Select a Banquet Catering Package for this booking</p>
+                    <p className="font-semibold">Select a Banquet Catering Package (Optional / None by Default)</p>
                     <p className="text-gray-600 mt-0.5">
-                      You can override the per-person package price at any time and specify a reason.
+                      Click a package to select or click again to remove. You can override head rates or create a bespoke package.
                     </p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddPackageModal(true)}
+                    className="text-xs font-bold text-[#C8860A] bg-white hover:bg-amber-50 border border-amber-300 px-3 py-1.5 rounded-xl shadow-2xs flex items-center gap-1 self-start sm:self-auto"
+                  >
+                    <Icon name="PlusIcon" size={13} />
+                    <span>Add Custom Package</span>
+                  </button>
                 </div>
 
                 {/* Selected Package & Pricing Overrides Banner */}
-                <div className="p-4 bg-gradient-to-r from-amber-50 via-orange-50/50 to-amber-50 border border-amber-300 rounded-2xl space-y-3 shadow-xs">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="w-7 h-7 rounded-lg bg-[#C8860A] text-white flex items-center justify-center font-bold text-xs shadow-2xs">
-                        £
-                      </span>
-                      <div>
-                        <span className="text-xs font-extrabold text-amber-950 uppercase tracking-wide">
-                          Package &amp; Head Rates ({currentPackage?.name})
+                {selectedPackageId ? (
+                  <div className="p-4 bg-gradient-to-r from-amber-50 via-orange-50/50 to-amber-50 border border-amber-300 rounded-2xl space-y-3 shadow-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-lg bg-[#C8860A] text-white flex items-center justify-center font-bold text-xs shadow-2xs">
+                          £
                         </span>
-                        <div className="text-[11px] text-amber-800">
-                          Adult Catalog Price: <strong>£{defaultPackagePricePerPerson} / person</strong>
-                          {Number(customerDetails.kids4to10) > 0 && <span> · Kids (4–10): <strong>£{defaultKidsPrice} / kid</strong></span>}
-                          {Number(customerDetails.kidsUnder4) > 0 && <span> · Under 4: <strong>Free (£0)</strong></span>}
+                        <div>
+                          <span className="text-xs font-extrabold text-amber-950 uppercase tracking-wide">
+                            Package &amp; Head Rates ({selectedPackageId === 'custom' ? 'Custom Package' : currentPackage?.name})
+                          </span>
+                          <div className="text-[11px] text-amber-800">
+                            Adult Catalog Price: <strong>£{defaultPackagePricePerPerson} / person</strong>
+                            {Number(customerDetails.kids4to10) > 0 && <span> · Kids (4–10): <strong>£{defaultKidsPrice} / kid</strong></span>}
+                            {Number(customerDetails.kidsUnder4) > 0 && <span> · Under 4: <strong>Free (£0)</strong></span>}
+                          </div>
                         </div>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPackageId('');
+                            setPackagePriceOverride(null);
+                            setPackagePriceOverrideReason('');
+                          }}
+                          className="text-xs text-rose-600 hover:text-rose-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-rose-200 shadow-2xs flex items-center gap-1"
+                        >
+                          <Icon name="XMarkIcon" size={12} />
+                          Deselect Package
+                        </button>
+                        {(packagePriceOverride !== null || kidsPriceOverride !== null || kidsUnder4PriceOverride !== null) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPackagePriceOverride(null);
+                              setPackagePriceOverrideReason('');
+                              setKidsPriceOverride(null);
+                              setKidsPriceOverrideReason('');
+                              setKidsUnder4PriceOverride(null);
+                              setKidsUnder4PriceOverrideReason('');
+                            }}
+                            className="text-xs text-red-600 hover:text-red-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-red-200 shadow-2xs"
+                          >
+                            Reset All to Default
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    {(packagePriceOverride !== null || kidsPriceOverride !== null || kidsUnder4PriceOverride !== null) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPackagePriceOverride(null);
-                          setPackagePriceOverrideReason('');
-                          setKidsPriceOverride(null);
-                          setKidsPriceOverrideReason('');
-                          setKidsUnder4PriceOverride(null);
-                          setKidsUnder4PriceOverrideReason('');
-                        }}
-                        className="text-xs text-red-600 hover:text-red-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-red-200 shadow-2xs"
-                      >
-                        Reset All to Default
-                      </button>
+
+                    {/* Adult Rate Override */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-amber-200/60">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                          Adult Agreed Rate (£ / adult person):
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">£</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={packagePriceOverride !== null ? packagePriceOverride : defaultPackagePricePerPerson}
+                            onChange={(e) => setPackagePriceOverride(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
+                            placeholder="e.g. 20"
+                            className="w-full pl-8 pr-3 py-2 border border-amber-300 rounded-xl text-sm font-bold text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                          Reason for Adult Rate Change:
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Discount negotiated for 150+ wedding guests"
+                          value={packagePriceOverrideReason}
+                          onChange={(e) => setPackagePriceOverrideReason(e.target.value)}
+                          className="w-full px-3 py-2 border border-amber-300 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Kids (4–10 yrs) Rate Override */}
+                    {Number(customerDetails.kids4to10) > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-amber-200/40">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] font-bold text-gray-700">
+                              Kids (4–10 yrs) Agreed Rate (£ / kid):
+                            </label>
+                            <span className="text-[10px] text-amber-800">
+                              {customerDetails.kids4to10} kids attending · Standard: £{defaultKidsPrice}
+                            </span>
+                          </div>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">£</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={kidsPriceOverride !== null ? kidsPriceOverride : defaultKidsPrice}
+                              onChange={(e) => setKidsPriceOverride(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
+                              placeholder="e.g. 15"
+                              className="w-full pl-8 pr-3 py-2 border border-amber-300 rounded-xl text-sm font-bold text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                            Reason for Kids Rate Change:
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Child meal portion discount"
+                            value={kidsPriceOverrideReason}
+                            onChange={(e) => setKidsPriceOverrideReason(e.target.value)}
+                            className="w-full px-3 py-2 border border-amber-300 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Kids Under 4 Rate Override */}
+                    {Number(customerDetails.kidsUnder4) > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-amber-200/40">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] font-bold text-gray-700">
+                              Kids Under 4 Rate (£ / infant):
+                            </label>
+                            <span className="text-[10px] text-amber-800">
+                              {customerDetails.kidsUnder4} infants · Standard: Free (£0)
+                            </span>
+                          </div>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">£</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={kidsUnder4PriceOverride !== null ? kidsUnder4PriceOverride : 0}
+                              onChange={(e) => setKidsUnder4PriceOverride(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
+                              placeholder="0"
+                              className="w-full pl-8 pr-3 py-2 border border-amber-300 rounded-xl text-sm font-bold text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                            Reason for Infant Rate Change:
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Special infant high-chair setup"
+                            value={kidsUnder4PriceOverrideReason}
+                            onChange={(e) => setKidsUnder4PriceOverrideReason(e.target.value)}
+                            className="w-full px-3 py-2 border border-amber-300 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Active Custom Rates Summary */}
+                    {((packagePriceOverride !== null && packagePriceOverride !== defaultPackagePricePerPerson) ||
+                      (kidsPriceOverride !== null && kidsPriceOverride !== defaultKidsPrice) ||
+                      (kidsUnder4PriceOverride !== null && Number(kidsUnder4PriceOverride) !== 0)) && (
+                      <div className="text-[11px] text-amber-900 font-medium bg-white/80 p-2.5 rounded-xl border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span>
+                          🏷️ <strong>Custom Price Active:</strong>
+                          {packagePriceOverride !== null && packagePriceOverride !== defaultPackagePricePerPerson && (
+                            <span> Adult: £{packagePriceOverride}/person</span>
+                          )}
+                          {kidsPriceOverride !== null && kidsPriceOverride !== defaultKidsPrice && (
+                            <span> · Kids (4–10): £{kidsPriceOverride}/kid</span>
+                          )}
+                          {kidsUnder4PriceOverride !== null && Number(kidsUnder4PriceOverride) !== 0 && (
+                            <span> · Under 4: £{kidsUnder4PriceOverride}/infant</span>
+                          )}
+                        </span>
+                        <span className="italic text-gray-500 truncate max-w-xs">
+                          {packagePriceOverrideReason || kidsPriceOverrideReason || kidsUnder4PriceOverrideReason || 'Custom rate agreed'}
+                        </span>
+                      </div>
                     )}
                   </div>
-
-                  {/* Adult Rate Override */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-amber-200/60">
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                        Adult Agreed Rate (£ / adult person):
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">£</span>
-                        <input
-                          type="number"
-                          min={0}
-                          value={packagePriceOverride !== null ? packagePriceOverride : defaultPackagePricePerPerson}
-                          onChange={(e) => setPackagePriceOverride(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
-                          placeholder="e.g. 20"
-                          className="w-full pl-8 pr-3 py-2 border border-amber-300 rounded-xl text-sm font-bold text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                        Reason for Adult Rate Change:
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Discount negotiated for 150+ wedding guests"
-                        value={packagePriceOverrideReason}
-                        onChange={(e) => setPackagePriceOverrideReason(e.target.value)}
-                        className="w-full px-3 py-2 border border-amber-300 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
-                      />
+                ) : (
+                  <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-gray-600">
+                    <div className="flex items-center gap-2">
+                      <Icon name="InformationCircleIcon" size={20} className="text-gray-400 flex-shrink-0" />
+                      <span>No catering package is selected by default. Click any package below to select it, or click <strong>&quot;Add Custom Package&quot;</strong> to create a bespoke package.</span>
                     </div>
                   </div>
-
-                  {/* Kids (4–10 yrs) Rate Override */}
-                  {Number(customerDetails.kids4to10) > 0 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-amber-200/40">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[11px] font-bold text-gray-700">
-                            Kids (4–10 yrs) Agreed Rate (£ / kid):
-                          </label>
-                          <span className="text-[10px] text-amber-800">
-                            {customerDetails.kids4to10} kids attending · Standard: £{defaultKidsPrice}
-                          </span>
-                        </div>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">£</span>
-                          <input
-                            type="number"
-                            min={0}
-                            value={kidsPriceOverride !== null ? kidsPriceOverride : defaultKidsPrice}
-                            onChange={(e) => setKidsPriceOverride(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
-                            placeholder="e.g. 15"
-                            className="w-full pl-8 pr-3 py-2 border border-amber-300 rounded-xl text-sm font-bold text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                          Reason for Kids Rate Change:
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Child meal portion discount"
-                          value={kidsPriceOverrideReason}
-                          onChange={(e) => setKidsPriceOverrideReason(e.target.value)}
-                          className="w-full px-3 py-2 border border-amber-300 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Kids Under 4 Rate Override */}
-                  {Number(customerDetails.kidsUnder4) > 0 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-amber-200/40">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[11px] font-bold text-gray-700">
-                            Kids Under 4 Rate (£ / infant):
-                          </label>
-                          <span className="text-[10px] text-amber-800">
-                            {customerDetails.kidsUnder4} infants · Standard: Free (£0)
-                          </span>
-                        </div>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">£</span>
-                          <input
-                            type="number"
-                            min={0}
-                            value={kidsUnder4PriceOverride !== null ? kidsUnder4PriceOverride : 0}
-                            onChange={(e) => setKidsUnder4PriceOverride(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
-                            placeholder="0"
-                            className="w-full pl-8 pr-3 py-2 border border-amber-300 rounded-xl text-sm font-bold text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                          Reason for Infant Rate Change:
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Special infant high-chair setup"
-                          value={kidsUnder4PriceOverrideReason}
-                          onChange={(e) => setKidsUnder4PriceOverrideReason(e.target.value)}
-                          className="w-full px-3 py-2 border border-amber-300 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-2xs"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Active Custom Rates Summary */}
-                  {((packagePriceOverride !== null && packagePriceOverride !== defaultPackagePricePerPerson) ||
-                    (kidsPriceOverride !== null && kidsPriceOverride !== defaultKidsPrice) ||
-                    (kidsUnder4PriceOverride !== null && Number(kidsUnder4PriceOverride) !== 0)) && (
-                    <div className="text-[11px] text-amber-900 font-medium bg-white/80 p-2.5 rounded-xl border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                      <span>
-                        🏷️ <strong>Custom Price Active:</strong>
-                        {packagePriceOverride !== null && packagePriceOverride !== defaultPackagePricePerPerson && (
-                          <span> Adult: £{packagePriceOverride}/person</span>
-                        )}
-                        {kidsPriceOverride !== null && kidsPriceOverride !== defaultKidsPrice && (
-                          <span> · Kids (4–10): £{kidsPriceOverride}/kid</span>
-                        )}
-                        {kidsUnder4PriceOverride !== null && Number(kidsUnder4PriceOverride) !== 0 && (
-                          <span> · Under 4: £{kidsUnder4PriceOverride}/infant</span>
-                        )}
-                      </span>
-                      <span className="italic text-gray-500 truncate max-w-xs">
-                        {packagePriceOverrideReason || kidsPriceOverrideReason || kidsUnder4PriceOverrideReason || 'Custom rate agreed'}
-                      </span>
-                    </div>
-                  )}
-                </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  {banquetPackages.map((pkg) => {
+                  {allBanquetPackages.map((pkg) => {
                     const isSelected = selectedPackageId === pkg.id;
                     return (
                       <div
                         key={pkg.id}
                         onClick={() => {
-                          if (selectedPackageId !== pkg.id) {
+                          if (selectedPackageId === pkg.id) {
+                            setSelectedPackageId('');
+                            setPackagePriceOverride(null);
+                            setPackagePriceOverrideReason('');
+                          } else {
                             setSelectedPackageId(pkg.id);
                             setPackagePriceOverride(null);
                             setPackagePriceOverrideReason('');
@@ -2195,12 +2119,38 @@ export default function ManualBookingForm({
                               <span className="text-xs text-gray-400 font-normal"> / person</span>
                             </div>
                           </div>
-                          <div
-                            className={`w-5 h-5 rounded-full border flex items-center justify-center ${
-                              isSelected ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300'
-                            }`}
-                          >
-                            {isSelected && <Icon name="CheckIcon" size={12} />}
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingPackageModal(pkg);
+                                setPackageForm({
+                                  name: pkg.name,
+                                  pricePerPerson: String(pkg.pricePerPerson),
+                                  kidsPrice: String((pkg as any).kidsPrice || getKidsPriceFromList(kidsPricing, pkg.name)),
+                                  tag: pkg.tag || '',
+                                  guestLabel: pkg.guestLabel || '',
+                                  vegStarters: pkg.starters?.veg || 2,
+                                  nonVegStarters: pkg.starters?.nonVeg || 2,
+                                  vegMains: pkg.mains?.veg || 2,
+                                  nonVegMains: pkg.mains?.nonVeg || 2,
+                                  desserts: (pkg.desserts || []).join(', '),
+                                  drinks: (pkg.drinks || []).join(', '),
+                                });
+                              }}
+                              className="text-xs text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-0.5 rounded font-semibold"
+                              title="Edit Package"
+                            >
+                              Edit
+                            </button>
+                            <div
+                              className={`w-5 h-5 rounded-full border flex items-center justify-center ${
+                                isSelected ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300'
+                              }`}
+                            >
+                              {isSelected && <Icon name="CheckIcon" size={12} />}
+                            </div>
                           </div>
                         </div>
 
@@ -2235,7 +2185,13 @@ export default function ManualBookingForm({
 
                   {/* Custom package card */}
                   <div
-                    onClick={() => setSelectedPackageId('custom')}
+                    onClick={() => {
+                      if (selectedPackageId === 'custom') {
+                        setSelectedPackageId('');
+                      } else {
+                        setSelectedPackageId('custom');
+                      }
+                    }}
                     className={`p-4 rounded-xl border cursor-pointer transition-all ${
                       selectedPackageId === 'custom'
                         ? 'border-amber-500 bg-amber-50/40 ring-2 ring-amber-400 shadow-md'
@@ -2245,7 +2201,7 @@ export default function ManualBookingForm({
                     <div className="flex items-start justify-between">
                       <div>
                         <span className="font-bold text-gray-900 text-sm">Custom Package Rate</span>
-                        <div className="text-xs text-gray-500 mt-0.5">Specify fully bespoke package rate</div>
+                        <div className="text-xs text-gray-500 mt-0.5">Specify bespoke per-person rate</div>
                       </div>
                       <div
                         className={`w-5 h-5 rounded-full border flex items-center justify-center ${
@@ -2261,6 +2217,7 @@ export default function ManualBookingForm({
                       <input
                         type="number"
                         min={0}
+                        placeholder="e.g. 35"
                         value={selectedPackageCustomPrice}
                         onChange={(e) => setSelectedPackageCustomPrice(e.target.value === '' ? '' : (parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : 0))}
                         onClick={(e) => e.stopPropagation()}
@@ -2299,22 +2256,7 @@ export default function ManualBookingForm({
                         Vegetarian Starters ({selectedVegStarters.length}/{currentPackage?.starters?.veg || '∞'})
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {indianMenu.starters.vegetarian.map((dish) => {
-                        const checked = selectedVegStarters.includes(dish);
-                        return (
-                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-emerald-50">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleItem(selectedVegStarters, setSelectedVegStarters, dish)}
-                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                            />
-                            <span className={checked ? 'font-semibold text-emerald-950' : ''}>{dish}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
+                    {renderDishChecklist('indian', 'vegStarters', indianMenu.starters.vegetarian, selectedVegStarters, setSelectedVegStarters, 'emerald')}
                   </div>
 
                   {/* Non-Veg Starters */}
@@ -2324,22 +2266,7 @@ export default function ManualBookingForm({
                         Non-Veg Starters ({selectedNonVegStarters.length}/{currentPackage?.starters?.nonVeg || '∞'})
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {indianMenu.starters.nonVegetarian.map((dish) => {
-                        const checked = selectedNonVegStarters.includes(dish);
-                        return (
-                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-red-50">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleItem(selectedNonVegStarters, setSelectedNonVegStarters, dish)}
-                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                            />
-                            <span className={checked ? 'font-semibold text-red-950' : ''}>{dish}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
+                    {renderDishChecklist('indian', 'nonVegStarters', indianMenu.starters.nonVegetarian, selectedNonVegStarters, setSelectedNonVegStarters, 'red')}
                   </div>
                 </div>
 
@@ -2352,22 +2279,7 @@ export default function ManualBookingForm({
                         Vegetarian Mains ({selectedVegMains.length}/{currentPackage?.mains?.veg || '∞'})
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {indianMenu.mains.vegetarian.map((dish) => {
-                        const checked = selectedVegMains.includes(dish);
-                        return (
-                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-emerald-50">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleItem(selectedVegMains, setSelectedVegMains, dish)}
-                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                            />
-                            <span className={checked ? 'font-semibold text-emerald-950' : ''}>{dish}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
+                    {renderDishChecklist('indian', 'vegMains', indianMenu.mains.vegetarian, selectedVegMains, setSelectedVegMains, 'emerald')}
                   </div>
 
                   {/* Non-Veg Mains */}
@@ -2377,22 +2289,7 @@ export default function ManualBookingForm({
                         Non-Veg Mains ({selectedNonVegMains.length}/{currentPackage?.mains?.nonVeg || '∞'})
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {indianMenu.mains.nonVegetarian.map((dish) => {
-                        const checked = selectedNonVegMains.includes(dish);
-                        return (
-                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-red-50">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleItem(selectedNonVegMains, setSelectedNonVegMains, dish)}
-                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                            />
-                            <span className={checked ? 'font-semibold text-red-950' : ''}>{dish}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
+                    {renderDishChecklist('indian', 'nonVegMains', indianMenu.mains.nonVegetarian, selectedNonVegMains, setSelectedNonVegMains, 'red')}
                   </div>
                 </div>
 
@@ -2404,19 +2301,7 @@ export default function ManualBookingForm({
                         Sundries ({selectedSundries.length})
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                      {indianMenu.sundries.map((item) => (
-                        <label key={item} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-gray-50">
-                          <input
-                            type="checkbox"
-                            checked={selectedSundries.includes(item)}
-                            onChange={() => toggleItem(selectedSundries, setSelectedSundries, item)}
-                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                          />
-                          <span className={selectedSundries.includes(item) ? 'font-semibold text-gray-900' : ''}>{item}</span>
-                        </label>
-                      ))}
-                    </div>
+                    {renderDishChecklist('indian', 'sundries', indianMenu.sundries, selectedSundries, setSelectedSundries, 'gray')}
                   </div>
 
                   <div className="border border-gray-200 rounded-xl p-3.5">
@@ -2425,19 +2310,7 @@ export default function ManualBookingForm({
                         Desserts ({selectedDesserts.length})
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                      {indianMenu.desserts.map((item) => (
-                        <label key={item} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-gray-50">
-                          <input
-                            type="checkbox"
-                            checked={selectedDesserts.includes(item)}
-                            onChange={() => toggleItem(selectedDesserts, setSelectedDesserts, item)}
-                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                          />
-                          <span className={selectedDesserts.includes(item) ? 'font-semibold text-gray-900' : ''}>{item}</span>
-                        </label>
-                      ))}
-                    </div>
+                    {renderDishChecklist('indian', 'desserts', indianMenu.desserts, selectedDesserts, setSelectedDesserts, 'gray')}
                   </div>
                 </div>
               </div>
@@ -2470,22 +2343,7 @@ export default function ManualBookingForm({
                         Vegetarian Starters ({selectedVegStarters.length}/{currentPackage?.starters?.veg || '∞'})
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {sriLankanMenu.starters.vegetarian.map((dish) => {
-                        const checked = selectedVegStarters.includes(dish);
-                        return (
-                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-emerald-50">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleItem(selectedVegStarters, setSelectedVegStarters, dish)}
-                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                            />
-                            <span className={checked ? 'font-semibold text-emerald-950' : ''}>{dish}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
+                    {renderDishChecklist('sl', 'vegStarters', sriLankanMenu.starters.vegetarian, selectedVegStarters, setSelectedVegStarters, 'emerald')}
                   </div>
 
                   {/* Non-Veg Starters */}
@@ -2495,22 +2353,7 @@ export default function ManualBookingForm({
                         Non-Veg Starters ({selectedNonVegStarters.length}/{currentPackage?.starters?.nonVeg || '∞'})
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {sriLankanMenu.starters.nonVegetarian.map((dish) => {
-                        const checked = selectedNonVegStarters.includes(dish);
-                        return (
-                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-red-50">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleItem(selectedNonVegStarters, setSelectedNonVegStarters, dish)}
-                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                            />
-                            <span className={checked ? 'font-semibold text-red-950' : ''}>{dish}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
+                    {renderDishChecklist('sl', 'nonVegStarters', sriLankanMenu.starters.nonVegetarian, selectedNonVegStarters, setSelectedNonVegStarters, 'red')}
                   </div>
                 </div>
 
@@ -2523,22 +2366,7 @@ export default function ManualBookingForm({
                         Vegetarian Mains ({selectedVegMains.length}/{currentPackage?.mains?.veg || '∞'})
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {sriLankanMenu.mains.vegetarian.map((dish) => {
-                        const checked = selectedVegMains.includes(dish);
-                        return (
-                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-emerald-50">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleItem(selectedVegMains, setSelectedVegMains, dish)}
-                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                            />
-                            <span className={checked ? 'font-semibold text-emerald-950' : ''}>{dish}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
+                    {renderDishChecklist('sl', 'vegMains', sriLankanMenu.mains.vegetarian, selectedVegMains, setSelectedVegMains, 'emerald')}
                   </div>
 
                   {/* Non-Veg Mains */}
@@ -2548,22 +2376,7 @@ export default function ManualBookingForm({
                         Non-Veg Mains ({selectedNonVegMains.length}/{currentPackage?.mains?.nonVeg || '∞'})
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {sriLankanMenu.mains.nonVegetarian.map((dish) => {
-                        const checked = selectedNonVegMains.includes(dish);
-                        return (
-                          <label key={dish} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-red-50">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleItem(selectedNonVegMains, setSelectedNonVegMains, dish)}
-                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                            />
-                            <span className={checked ? 'font-semibold text-red-950' : ''}>{dish}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
+                    {renderDishChecklist('sl', 'nonVegMains', sriLankanMenu.mains.nonVegetarian, selectedNonVegMains, setSelectedNonVegMains, 'red')}
                   </div>
                 </div>
 
@@ -2575,19 +2388,7 @@ export default function ManualBookingForm({
                         Sundries ({selectedSundries.length})
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                      {sriLankanMenu.sundries.map((item) => (
-                        <label key={item} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-gray-50">
-                          <input
-                            type="checkbox"
-                            checked={selectedSundries.includes(item)}
-                            onChange={() => toggleItem(selectedSundries, setSelectedSundries, item)}
-                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                          />
-                          <span className={selectedSundries.includes(item) ? 'font-semibold text-gray-900' : ''}>{item}</span>
-                        </label>
-                      ))}
-                    </div>
+                    {renderDishChecklist('sl', 'sundries', sriLankanMenu.sundries, selectedSundries, setSelectedSundries, 'gray')}
                   </div>
 
                   <div className="border border-gray-200 rounded-xl p-3.5">
@@ -2596,19 +2397,7 @@ export default function ManualBookingForm({
                         Desserts ({selectedDesserts.length})
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                      {sriLankanMenu.desserts.map((item) => (
-                        <label key={item} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer p-1 rounded hover:bg-gray-50">
-                          <input
-                            type="checkbox"
-                            checked={selectedDesserts.includes(item)}
-                            onChange={() => toggleItem(selectedDesserts, setSelectedDesserts, item)}
-                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                          />
-                          <span className={selectedDesserts.includes(item) ? 'font-semibold text-gray-900' : ''}>{item}</span>
-                        </label>
-                      ))}
-                    </div>
+                    {renderDishChecklist('sl', 'desserts', sriLankanMenu.desserts, selectedDesserts, setSelectedDesserts, 'gray')}
                   </div>
                 </div>
               </div>
@@ -2863,23 +2652,62 @@ export default function ManualBookingForm({
               </div>
             )}
 
-            {/* TAB: VENUE HALL HIRE */}
+            {/* TAB: VENUE HALL HIRE & DRY HIRE */}
             {menuTab === 'hall' && (
-              <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
-                <div className="border-b border-gray-100 pb-3">
-                  <h4 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
-                    <Icon name="BuildingOfficeIcon" size={16} className="text-amber-600" />
-                    Venue Hall Hire Charges
-                  </h4>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Select if the event takes place at Honeymoon Banquet Hall. You can edit the hire fee with a reason.
-                  </p>
+              <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-6">
+                <div className="border-b border-gray-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h4 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
+                      <Icon name="BuildingOfficeIcon" size={16} className="text-amber-600" />
+                      Venue Hall Hire &amp; Dry Hire
+                    </h4>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Venue hall hire and dry hire are <strong>not added by default</strong>. Select an option below or add a custom fee if applicable.
+                    </p>
+                  </div>
+                  {selectedHallOption && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedHallOption(null);
+                        setShowHallPriceEditor(false);
+                      }}
+                      className="text-xs text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1 shadow-2xs self-start sm:self-auto"
+                    >
+                      <Icon name="XMarkIcon" size={13} />
+                      <span>Remove Hall / Dry Hire (£0)</span>
+                    </button>
+                  )}
                 </div>
 
+                {/* Active Status Banner */}
+                <div className={`p-3.5 rounded-xl border text-xs flex flex-wrap items-center justify-between gap-2 ${
+                  selectedHallOption === null
+                    ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
+                    : 'bg-amber-50/80 border-amber-300 text-amber-950 font-medium'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <Icon name={selectedHallOption === null ? 'CheckCircleIcon' : 'BuildingOfficeIcon'} size={18} className={selectedHallOption === null ? 'text-emerald-600' : 'text-[#C8860A]'} />
+                    <span>
+                      {selectedHallOption === null ? (
+                        <><strong>No Venue Hall Fee Applied:</strong> Booking does not include hall hire charges (£0).</>
+                      ) : (
+                        <><strong>Active Hall Charge:</strong> {selectedHallOption.label} — <strong className="text-amber-900">£{selectedHallOption.amount}</strong>{selectedHallOption.reason ? ` (${selectedHallOption.reason})` : ''}</>
+                      )}
+                    </span>
+                  </div>
+                  {selectedHallOption && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900">
+                      Applied to Invoice
+                    </span>
+                  )}
+                </div>
+
+                {/* Default Choice: None / Offsite Catering */}
                 <div className="space-y-2.5">
                   <label
                     className={`flex items-center justify-between p-3.5 rounded-xl border text-xs cursor-pointer transition-colors ${
-                      selectedHallOption === null ? 'bg-amber-50 border-amber-400 text-amber-900 font-bold' : 'bg-white border-gray-200 text-gray-700'
+                      selectedHallOption === null ? 'bg-amber-50/70 border-amber-400 text-amber-900 font-bold ring-1 ring-amber-300' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
@@ -2893,112 +2721,346 @@ export default function ManualBookingForm({
                         }}
                         className="text-amber-600 focus:ring-amber-500"
                       />
-                      <span>No Hall Hire Fee (Offsite Catering or Included in Package)</span>
+                      <span>No Hall Hire Fee (Offsite Catering or Included in Package / Removed by Default)</span>
                     </div>
-                    <span className="text-gray-400 font-normal">£0</span>
+                    <span className="text-gray-400 font-semibold">£0</span>
                   </label>
+                </div>
 
-                  {venueHallCharges.map((hall) => {
-                    const priceMatch = hall.charge.match(/£(\d+)/);
-                    const defaultAmount = priceMatch ? parseInt(priceMatch[1]) : 250;
-                    const isSelected = selectedHallOption?.label === hall.day;
-                    return (
-                      <div
-                        key={`${hall.day}-${hall.note}`}
-                        className={`rounded-xl border text-xs transition-colors ${
-                          isSelected ? 'bg-amber-50/60 border-amber-400 shadow-xs' : 'bg-white border-gray-200 text-gray-700'
-                        }`}
-                      >
-                        <label className="flex items-center justify-between p-3.5 cursor-pointer">
-                          <div className="flex items-center gap-2.5">
-                            <input
-                              type="radio"
-                              name="hallOption"
-                              checked={isSelected}
-                              onChange={() => {
-                                setSelectedHallOption({
-                                  label: hall.day,
-                                  amount: defaultAmount,
-                                  defaultAmount,
-                                });
-                                setShowHallPriceEditor(false);
-                              }}
-                              className="text-amber-600 focus:ring-amber-500"
-                            />
-                            <div>
-                              <span className="font-semibold text-gray-900">{hall.day}</span>
-                              {hall.note && <span className="ml-2 text-gray-400 font-normal">({hall.note})</span>}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-[#C8860A]">
-                              £{isSelected && selectedHallOption ? selectedHallOption.amount : defaultAmount}
-                            </span>
-                            {isSelected && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setShowHallPriceEditor(!showHallPriceEditor);
+                {/* Section 1: Honeymoon Banquet Hall Standard Rates */}
+                <div className="space-y-3 pt-2 border-t border-gray-100">
+                  <span className="text-xs font-bold text-gray-900 uppercase tracking-wide block">
+                    🏛️ Honeymoon Banquet Hall Charges
+                  </span>
+                  <div className="space-y-2">
+                    {venueHallCharges.map((hall) => {
+                      const priceMatch = hall.charge.match(/£(\d+)/);
+                      const defaultAmount = priceMatch ? parseInt(priceMatch[1]) : 250;
+                      const isSelected = selectedHallOption?.label === hall.day;
+                      return (
+                        <div
+                          key={`${hall.day}-${hall.note}`}
+                          className={`rounded-xl border text-xs transition-colors ${
+                            isSelected ? 'bg-amber-50/60 border-amber-400 shadow-xs ring-1 ring-amber-300' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                          }`}
+                        >
+                          <label className="flex items-center justify-between p-3.5 cursor-pointer">
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="radio"
+                                name="hallOption"
+                                checked={isSelected}
+                                onChange={() => {
+                                  setSelectedHallOption({
+                                    label: hall.day,
+                                    amount: defaultAmount,
+                                    defaultAmount,
+                                  });
+                                  setShowHallPriceEditor(false);
                                 }}
-                                className="text-[11px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-2 py-0.5 rounded"
-                              >
-                                Edit Fee
-                              </button>
-                            )}
-                          </div>
-                        </label>
+                                className="text-amber-600 focus:ring-amber-500"
+                              />
+                              <div>
+                                <span className="font-semibold text-gray-900">{hall.day}</span>
+                                {hall.note && <span className="ml-2 text-gray-400 font-normal">({hall.note})</span>}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-[#C8860A]">
+                                £{isSelected && selectedHallOption ? selectedHallOption.amount : defaultAmount}
+                              </span>
+                              {isSelected ? (
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setShowHallPriceEditor(!showHallPriceEditor);
+                                    }}
+                                    className="text-[11px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-2 py-0.5 rounded shadow-2xs"
+                                  >
+                                    Edit Fee
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedHallOption(null);
+                                      setShowHallPriceEditor(false);
+                                    }}
+                                    className="text-[11px] font-bold text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 px-2 py-0.5 rounded border border-red-200"
+                                    title="Remove this charge"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedHallOption({
+                                      label: hall.day,
+                                      amount: defaultAmount,
+                                      defaultAmount,
+                                    });
+                                  }}
+                                  className="text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-200"
+                                >
+                                  Select
+                                </button>
+                              )}
+                            </div>
+                          </label>
 
-                        {/* Inline Hall Price Editor */}
-                        {isSelected && showHallPriceEditor && selectedHallOption && (
-                          <div className="px-4 pb-3.5 pt-2 border-t border-amber-200 bg-white/70 rounded-b-xl grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-[10px] font-bold text-gray-700 mb-1">
-                                Agreed Hall Fee (£):
-                              </label>
-                              <div className="relative">
-                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold">£</span>
+                          {/* Inline Hall Price Editor */}
+                          {isSelected && showHallPriceEditor && selectedHallOption && (
+                            <div className="px-4 pb-3.5 pt-2 border-t border-amber-200 bg-white/70 rounded-b-xl grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[10px] font-bold text-gray-700 mb-1">
+                                  Agreed Hall Fee (£):
+                                </label>
+                                <div className="relative">
+                                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold">£</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={selectedHallOption.amount}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      const newAmt = val === '' ? '' : (parseFloat(val) >= 0 ? parseFloat(val) : 0);
+                                      setSelectedHallOption({
+                                        ...selectedHallOption,
+                                        amount: newAmt as any,
+                                        isCustomAmount: true,
+                                      });
+                                    }}
+                                    className="w-full pl-6 pr-2 py-1.5 border border-amber-300 rounded-lg text-xs font-bold text-gray-900 bg-white"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-gray-700 mb-1">
+                                  Reason for Fee Edit:
+                                </label>
                                 <input
-                                  type="number"
-                                  min={0}
-                                  value={selectedHallOption.amount}
+                                  type="text"
+                                  placeholder="e.g. Off-peak discount / weekday rate"
+                                  value={selectedHallOption.reason || ''}
                                   onChange={(e) => {
-                                    const val = e.target.value;
-                                    const newAmt = val === '' ? '' : (parseFloat(val) >= 0 ? parseFloat(val) : 0);
+                                    const r = e.target.value;
                                     setSelectedHallOption({
                                       ...selectedHallOption,
-                                      amount: newAmt as any,
+                                      reason: r,
                                       isCustomAmount: true,
                                     });
                                   }}
-                                  className="w-full pl-6 pr-2 py-1.5 border border-amber-300 rounded-lg text-xs font-bold text-gray-900 bg-white"
+                                  className="w-full border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs bg-white"
                                 />
                               </div>
                             </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Section 2: Dry Hire Sessions (Default: Removed / None) */}
+                <div className="space-y-3 pt-2 border-t border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-gray-900 uppercase tracking-wide block">
+                        📦 Dry Hire Sessions (Hall-Only Hire — Removed by Default)
+                      </span>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        Dry hire is not selected by default. Select a session below if the customer is booking hall-only hire without catering.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {dryHirePrices.map((dh) => {
+                      const defaultAmount = typeof dh.price === 'number' ? dh.price : (parseInt(String(dh.price).replace(/[^\d]/g, '')) || 2000);
+                      const dhLabel = `Dry Hire: ${dh.day} (${dh.session})`;
+                      const isSelected = selectedHallOption?.label === dhLabel;
+
+                      return (
+                        <div
+                          key={`${dh.day}-${dh.session}`}
+                          className={`p-3.5 rounded-xl border text-xs transition-colors space-y-2 ${
+                            isSelected ? 'bg-amber-50/70 border-amber-400 ring-1 ring-amber-300' : 'bg-white border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
                             <div>
-                              <label className="block text-[10px] font-bold text-gray-700 mb-1">
-                                Reason for Fee Edit:
-                              </label>
-                              <input
-                                type="text"
-                                placeholder="e.g. Off-peak discount / weekday rate"
-                                value={selectedHallOption.reason || ''}
-                                onChange={(e) => {
-                                  const r = e.target.value;
-                                  setSelectedHallOption({
-                                    ...selectedHallOption,
-                                    reason: r,
-                                    isCustomAmount: true,
-                                  });
-                                }}
-                                className="w-full border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs bg-white"
-                              />
+                              <div className="font-semibold text-gray-900">{dh.day} — {dh.session}</div>
+                              <div className="text-[10px] text-gray-400 mt-0.5">Hall-only dry hire</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-bold text-[#C8860A]">
+                                £{isSelected && selectedHallOption ? selectedHallOption.amount.toLocaleString() : defaultAmount.toLocaleString()}
+                              </div>
                             </div>
                           </div>
-                        )}
+
+                          <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
+                            {isSelected ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowHallPriceEditor(!showHallPriceEditor)}
+                                  className="text-[11px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded-lg"
+                                >
+                                  Edit Dry Hire Fee
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedHallOption(null);
+                                    setShowHallPriceEditor(false);
+                                  }}
+                                  className="text-[11px] font-bold text-red-600 hover:text-red-800 bg-red-50 px-2 py-1 rounded-lg border border-red-200"
+                                >
+                                  Remove
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedHallOption({
+                                    label: dhLabel,
+                                    amount: defaultAmount,
+                                    defaultAmount,
+                                  });
+                                  setShowHallPriceEditor(false);
+                                }}
+                                className="w-full py-1.5 px-3 rounded-lg text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-center transition-colors"
+                              >
+                                + Add Dry Hire ({dh.session})
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Inline Dry Hire Price Editor */}
+                          {isSelected && showHallPriceEditor && selectedHallOption && (
+                            <div className="pt-2 border-t border-amber-200 space-y-2">
+                              <div>
+                                <label className="block text-[10px] font-bold text-gray-700 mb-0.5">
+                                  Agreed Dry Hire Rate (£):
+                                </label>
+                                <div className="relative">
+                                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold">£</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={selectedHallOption.amount}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      const newAmt = val === '' ? '' : (parseFloat(val) >= 0 ? parseFloat(val) : 0);
+                                      setSelectedHallOption({
+                                        ...selectedHallOption,
+                                        amount: newAmt as any,
+                                        isCustomAmount: true,
+                                      });
+                                    }}
+                                    className="w-full pl-6 pr-2 py-1.5 border border-amber-300 rounded-lg text-xs font-bold bg-white"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-gray-700 mb-0.5">
+                                  Reason for Rate Edit:
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Bespoke hours discount"
+                                  value={selectedHallOption.reason || ''}
+                                  onChange={(e) => {
+                                    const r = e.target.value;
+                                    setSelectedHallOption({
+                                      ...selectedHallOption,
+                                      reason: r,
+                                      isCustomAmount: true,
+                                    });
+                                  }}
+                                  className="w-full border border-amber-300 rounded-lg px-2.5 py-1 text-xs bg-white"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Section 3: Custom Venue / Hall Hire Charge */}
+                <div className="p-4 bg-gray-50/70 border border-gray-200 rounded-xl space-y-3">
+                  <span className="text-xs font-bold text-gray-900 uppercase tracking-wide block">
+                    ✚ Add Custom Venue / Hall Hire Charge
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-700 mb-1">Charge Label *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Bespoke Evening Hall Hire"
+                        value={newHallChargeLabel}
+                        onChange={(e) => setNewHallChargeLabel(e.target.value)}
+                        className="w-full border border-gray-300 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-700 mb-1">Amount (£) *</label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">£</span>
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder="e.g. 750"
+                          value={newHallChargeAmount}
+                          onChange={(e) => setNewHallChargeAmount(e.target.value)}
+                          className="w-full pl-6 pr-2 py-2 border border-gray-300 rounded-xl text-xs font-bold bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        />
                       </div>
-                    );
-                  })}
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-700 mb-1">Reason / Note</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="e.g. Extended midnight hours"
+                          value={newHallChargeNote}
+                          onChange={(e) => setNewHallChargeNote(e.target.value)}
+                          className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const lbl = newHallChargeLabel.trim();
+                            if (!lbl) return;
+                            const amt = parseFloat(newHallChargeAmount) || 0;
+                            setSelectedHallOption({
+                              label: lbl,
+                              amount: amt,
+                              defaultAmount: amt,
+                              isCustomAmount: true,
+                              reason: newHallChargeNote.trim(),
+                            });
+                            setNewHallChargeLabel('');
+                            setNewHallChargeAmount('');
+                            setNewHallChargeNote('');
+                          }}
+                          disabled={!newHallChargeLabel.trim()}
+                          className="px-3.5 py-2 rounded-xl text-xs font-bold text-white shadow-2xs disabled:opacity-40 whitespace-nowrap"
+                          style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -3968,30 +4030,12 @@ export default function ManualBookingForm({
 
               {/* Order breakdown */}
               <div className="text-xs space-y-2 text-gray-700">
-                {bookingCategory === 'venue_dry_hire' && (
-                  <div className="flex justify-between text-amber-900 bg-amber-50/80 p-2 rounded-lg border border-amber-200">
-                    <span className="font-semibold">
-                      Venue Dry Hire ({selectedVenueDryHireItem?.name}):
-                    </span>
-                    <span className="font-extrabold text-[#C8860A]">£{effectiveVenueDryHirePrice.toLocaleString()}</span>
-                  </div>
-                )}
-
-                {adultFoodTotal > 0 ? (
-                  <div className="flex justify-between">
-                    <span>
-                      Adult Catering ({customerDetails.adults} × £{effectivePackagePrice}):
-                    </span>
-                    <span className="font-semibold">£{adultFoodTotal.toLocaleString()}</span>
-                  </div>
-                ) : (
-                  bookingCategory === 'venue_dry_hire' && (
-                    <div className="flex justify-between text-gray-500 italic text-[11px]">
-                      <span>Adult Food Catering ({customerDetails.adults} guests):</span>
-                      <span>Not included (External Caterer)</span>
-                    </div>
-                  )
-                )}
+                <div className="flex justify-between">
+                  <span>
+                    Adult Catering ({customerDetails.adults} × £{effectivePackagePrice}):
+                  </span>
+                  <span className="font-semibold">£{adultFoodTotal.toLocaleString()}</span>
+                </div>
 
                 {Number(customerDetails.kids4to10) > 0 && (
                   <div className="flex justify-between text-gray-600">
@@ -4391,6 +4435,233 @@ export default function ManualBookingForm({
                 + Create Another Booking
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── ADD / EDIT PACKAGE MODAL ─── */}
+      {(showAddPackageModal || editingPackageModal !== null) && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg border border-gray-100 space-y-4 animate-scale-up max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-gray-900">
+                  {editingPackageModal ? `Edit Package: ${editingPackageModal.name}` : 'Create Custom Banquet Package'}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Configure package head rates, quotas, and included dishes.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddPackageModal(false);
+                  setEditingPackageModal(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 p-1"
+              >
+                <Icon name="XMarkIcon" size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-gray-700 mb-1">Package Name *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Diamond Banquet"
+                    value={packageForm.name}
+                    onChange={(e) => setPackageForm({ ...packageForm, name: e.target.value })}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50 focus:bg-white font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-gray-700 mb-1">Tag / Badge</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. VIP Choice, Most Popular"
+                    value={packageForm.tag}
+                    onChange={(e) => setPackageForm({ ...packageForm, tag: e.target.value })}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50 focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-gray-700 mb-1">Adult Rate (£ / person) *</label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 35"
+                    value={packageForm.pricePerPerson}
+                    onChange={(e) => setPackageForm({ ...packageForm, pricePerPerson: e.target.value })}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50 focus:bg-white font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-gray-700 mb-1">Kids Rate (4–10 yrs) (£ / kid)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 18"
+                    value={packageForm.kidsPrice}
+                    onChange={(e) => setPackageForm({ ...packageForm, kidsPrice: e.target.value })}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50 focus:bg-white font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-gray-700 mb-1">Guest Requirements Label</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Minimum 75 guests"
+                  value={packageForm.guestLabel}
+                  onChange={(e) => setPackageForm({ ...packageForm, guestLabel: e.target.value })}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50 focus:bg-white"
+                />
+              </div>
+
+              {/* Quotas */}
+              <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl space-y-2">
+                <span className="font-bold text-amber-900 block text-[11px] uppercase tracking-wide">
+                  Dish Quotas
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-gray-600 mb-0.5">Veg Starters</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={packageForm.vegStarters}
+                      onChange={(e) => setPackageForm({ ...packageForm, vegStarters: parseInt(e.target.value) || 0 })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white text-center font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-600 mb-0.5">Non-Veg Starters</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={packageForm.nonVegStarters}
+                      onChange={(e) => setPackageForm({ ...packageForm, nonVegStarters: parseInt(e.target.value) || 0 })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white text-center font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-600 mb-0.5">Veg Mains</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={packageForm.vegMains}
+                      onChange={(e) => setPackageForm({ ...packageForm, vegMains: parseInt(e.target.value) || 0 })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white text-center font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-600 mb-0.5">Non-Veg Mains</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={packageForm.nonVegMains}
+                      onChange={(e) => setPackageForm({ ...packageForm, nonVegMains: parseInt(e.target.value) || 0 })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white text-center font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-gray-700 mb-1">Desserts Included</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 1 Sweet Dish, Ice Cream"
+                    value={packageForm.desserts}
+                    onChange={(e) => setPackageForm({ ...packageForm, desserts: e.target.value })}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50 focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-gray-700 mb-1">Drinks Included</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Soft Drinks, Bottled Water"
+                    value={packageForm.drinks}
+                    onChange={(e) => setPackageForm({ ...packageForm, drinks: e.target.value })}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs bg-gray-50 focus:bg-white"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddPackageModal(false);
+                  setEditingPackageModal(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const name = packageForm.name.trim();
+                  if (!name) return;
+                  const price = parseFloat(packageForm.pricePerPerson) || 0;
+                  const kidsPrice = parseFloat(packageForm.kidsPrice) || 0;
+
+                  if (editingPackageModal) {
+                    setAllBanquetPackages((prev) =>
+                      prev.map((p) =>
+                        p.id === editingPackageModal.id
+                          ? {
+                              ...p,
+                              name,
+                              pricePerPerson: price,
+                              kidsPrice: kidsPrice || (p as any).kidsPrice,
+                              tag: packageForm.tag.trim(),
+                              guestLabel: packageForm.guestLabel.trim(),
+                              starters: { veg: packageForm.vegStarters, nonVeg: packageForm.nonVegStarters },
+                              mains: { veg: packageForm.vegMains, nonVeg: packageForm.nonVegMains },
+                              desserts: packageForm.desserts.split(',').map((s) => s.trim()).filter(Boolean),
+                              drinks: packageForm.drinks.split(',').map((s) => s.trim()).filter(Boolean),
+                            }
+                          : p
+                      )
+                    );
+                    setEditingPackageModal(null);
+                  } else {
+                    const newPkgId = 'pkg_custom_' + Date.now();
+                    const newPkg: BanquetPackageItem = {
+                      id: newPkgId,
+                      name,
+                      pricePerPerson: price,
+                      tag: packageForm.tag.trim(),
+                      guestLabel: packageForm.guestLabel.trim(),
+                      starters: { veg: packageForm.vegStarters, nonVeg: packageForm.nonVegStarters },
+                      mains: { veg: packageForm.vegMains, nonVeg: packageForm.nonVegMains },
+                      desserts: packageForm.desserts.split(',').map((s) => s.trim()).filter(Boolean),
+                      drinks: packageForm.drinks.split(',').map((s) => s.trim()).filter(Boolean),
+                    } as any;
+                    (newPkg as any).kidsPrice = kidsPrice;
+                    setAllBanquetPackages((prev) => [...prev, newPkg]);
+                    setSelectedPackageId(newPkgId);
+                    setShowAddPackageModal(false);
+                  }
+                }}
+                disabled={!packageForm.name.trim()}
+                className="px-5 py-2 rounded-xl text-xs font-bold text-white shadow-md active:scale-95 disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg, #C8860A, #F0A830)' }}
+              >
+                {editingPackageModal ? 'Save Changes' : 'Create Package'}
+              </button>
+            </div>
           </div>
         </div>
       )}

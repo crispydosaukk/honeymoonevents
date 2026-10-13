@@ -16,7 +16,7 @@ import { getKidsPriceFromList } from '@/utils/kidsPricing';
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
 type BookingStatus =
-  | 'new_enquiry' | 'menu_sent' | 'menu_selected' | 'deposit_pending' | 'deposit_confirmed' | 'event_scheduled' | 'event_completed' | 'final_invoice_sent' | 'final_payment_received' | 'completed';
+  | 'new_enquiry' | 'menu_sent' | 'menu_selected' | 'deposit_pending' | 'deposit_confirmed' | 'event_scheduled' | 'event_completed' | 'final_invoice_sent' | 'final_payment_received' | 'completed' | 'cancelled';
 
 interface ExtraCharge {
   label: string;
@@ -81,9 +81,27 @@ interface Booking {
   kidsUnder4PricePerPerson?: number;
   priceOverrides?: Record<string, any>;
   customPriceReasons?: string[];
+  includeVenueHall?: boolean;
+  venueHallCharge?: {
+    label: string;
+    amount: number;
+    isCustom?: boolean;
+    reason?: string;
+  } | null;
+  cancellationDetails?: {
+    cancelledAt: string;
+    cancelledBy?: string;
+    reason: string;
+    customReason?: string;
+    advancePaid: number;
+    depositPaid?: boolean;
+    depositMethod?: string;
+    notes?: string;
+  };
   enquiryDate: string;
   updatedAt?: string;
   createdAt?: string;
+  orderClosedAt?: string;
 }
 
 interface Customer {
@@ -123,6 +141,7 @@ const STATUS_LABELS: Record<BookingStatus, string> = {
   final_invoice_sent: 'Final Invoice Sent',
   final_payment_received: 'Final Payment Received',
   completed: 'Completed',
+  cancelled: 'Cancelled',
 };
 
 const STATUS_COLORS: Record<BookingStatus, string> = {
@@ -136,6 +155,7 @@ const STATUS_COLORS: Record<BookingStatus, string> = {
   final_invoice_sent: 'bg-yellow-50 text-yellow-700 border border-yellow-200',
   final_payment_received: 'bg-lime-50 text-lime-700 border border-lime-200',
   completed: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  cancelled: 'bg-rose-50 text-rose-700 border border-rose-200',
 };
 
 const STATUS_DOT: Record<BookingStatus, string> = {
@@ -149,6 +169,7 @@ const STATUS_DOT: Record<BookingStatus, string> = {
   final_invoice_sent: 'bg-yellow-500',
   final_payment_received: 'bg-lime-500',
   completed: 'bg-emerald-500',
+  cancelled: 'bg-rose-500',
 };
 
 const MENU_PACKAGES = [
@@ -394,6 +415,43 @@ export default function AdminPage() {
   const [historyFilterMonth, setHistoryFilterMonth] = useState<number | 'all'>('all');
   const [historyFilterYear, setHistoryFilterYear] = useState<number | 'all'>(new Date().getFullYear());
 
+  // Cancellation Modal States (Works for both manual and website booking orders)
+  const [cancellationModalBooking, setCancellationModalBooking] = useState<Booking | null>(null);
+  const [cancellationReason, setCancellationReason] = useState<string>('Client requested cancellation');
+  const [cancellationCustomReason, setCancellationCustomReason] = useState<string>('');
+  const [cancellationNotes, setCancellationNotes] = useState<string>('');
+  const [isSubmittingCancellation, setIsSubmittingCancellation] = useState<boolean>(false);
+
+  // Hall Hire Drawer Modal States
+  const [showAddHallModal, setShowAddHallModal] = useState<boolean>(false);
+  const [customHallLabel, setCustomHallLabel] = useState<string>('Bespoke Venue Hall Hire');
+  const [customHallAmount, setCustomHallAmount] = useState<string>('300');
+  const [customHallReason, setCustomHallReason] = useState<string>('');
+
+  // Booking Tracker Filter States
+  const [trackerStatusFilter, setTrackerStatusFilter] = useState<string>('all');
+  const [trackerEventFilter, setTrackerEventFilter] = useState<string>('all');
+  const [trackerDateFilter, setTrackerDateFilter] = useState<string>('');
+
+  // Pagination States
+  const [bookingPage, setBookingPage] = useState<number>(1);
+  const [bookingPageSize, setBookingPageSize] = useState<number>(10);
+  const [historyPage, setHistoryPage] = useState<number>(1);
+  const [historyPageSize, setHistoryPageSize] = useState<number>(10);
+
+  const getPaginationRange = (current: number, total: number): (number | string)[] => {
+    if (total <= 5) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (current <= 3) {
+      return [1, 2, 3, 4, '...', total];
+    }
+    if (current >= total - 2) {
+      return [1, '...', total - 3, total - 2, total - 1, total];
+    }
+    return [1, '...', current - 1, current, current + 1, '...', total];
+  };
+
   const resetAllEditStates = () => {
     setIsEditingDeposit(false);
     setIsEditingCustomerName(false);
@@ -471,6 +529,9 @@ export default function AdminPage() {
           kidsUnder4PricePerPerson: data.kidsUnder4PricePerPerson,
           priceOverrides: data.priceOverrides,
           customPriceReasons: data.customPriceReasons,
+          includeVenueHall: data.includeVenueHall,
+          venueHallCharge: data.venueHallCharge,
+          cancellationDetails: data.cancellationDetails,
           enquiryDate: data.createdAt ? new Date(data.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
           dueDate: (() => {
             if (data.dueDate) return data.dueDate;
@@ -568,6 +629,14 @@ export default function AdminPage() {
   const [discountError, setDiscountError] = useState('');
   const [showMenuPanel, setShowMenuPanel] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
+
+  useEffect(() => {
+    setBookingPage(1);
+  }, [filterStatus, filterEvent, bookingsFilterMonth, bookingsFilterYear]);
+
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [historyFilterMonth, historyFilterYear, historySearch]);
   const [customAlert, setCustomAlert] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [bookingToDelete, setBookingToDelete] = useState<{ id: string; name: string } | null>(null);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
@@ -877,7 +946,7 @@ export default function AdminPage() {
       discountText = `\n• Discount (${booking.discount.reason}): -£${getDiscountAmount(booking).toLocaleString()}`;
     }
 
-    const hallCharge = getVenueHallCharge(booking.date, booking.time);
+    const hallCharge = getBookingHallCharge(booking);
     const hallText = hallCharge ? `\n• ${hallCharge.label}: £${hallCharge.amount.toLocaleString()}` : '';
 
     let extrasText = '';
@@ -929,7 +998,7 @@ It was an absolute pleasure serving you. We hope you and your guests had a wonde
       discountText = `\n\n*🏷️ Discount (${booking.discount.reason}):* -£${getDiscountAmount(booking).toLocaleString()}`;
     }
 
-    const hallCharge = getVenueHallCharge(booking.date, booking.time);
+    const hallCharge = getBookingHallCharge(booking);
     const hallText = hallCharge ? `\n\n*🏛️ ${hallCharge.label}:* £${hallCharge.amount.toLocaleString()}` : '';
 
     const dueDateText = booking.dueDate ? `\n\n*⏰ Payment Due By:* ${booking.dueDate}` : '';
@@ -1575,6 +1644,550 @@ Once you have completed the transfer, please send us a screenshot of the payment
     }
   };
 
+  // ─── VENUE HALL CHARGE HANDLERS (EXPLICIT SELECT ADD / REMOVE) ───────────────
+  const handleRemoveHallChargeFromBooking = async (booking: Booking) => {
+    try {
+      const updatedCharges = (booking.extraCharges || []).filter(c => !c.label.toLowerCase().includes('hall hire') && !c.label.toLowerCase().includes('dry hire'));
+      const updatedBooking: Booking = {
+        ...booking,
+        includeVenueHall: false,
+        venueHallCharge: null,
+        extraCharges: updatedCharges,
+      };
+
+      setBookings(prev => prev.map(b => b.id === booking.id ? updatedBooking : b));
+      if (selectedBooking?.id === booking.id) {
+        setSelectedBooking(updatedBooking);
+      }
+
+      await setDoc(doc(db, 'booking_requests', booking.id), {
+        includeVenueHall: false,
+        venueHallCharge: null,
+        extraCharges: updatedCharges,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      const cleanData = Object.fromEntries(
+        Object.entries({ ...updatedBooking, updatedAt: new Date().toISOString() }).filter(([_, v]) => v !== undefined)
+      );
+      await setDoc(doc(db, 'bookings', booking.id), cleanData, { merge: true });
+      setCustomAlert({ message: 'Venue hall charge removed (£0)', type: 'success' });
+    } catch (err) {
+      console.error('Error removing hall charge:', err);
+      setCustomAlert({ message: 'Could not remove hall charge.', type: 'error' });
+    }
+  };
+
+  const handleApplyHallChargeToBooking = async (
+    booking: Booking,
+    charge: { label: string; amount: number; isCustom?: boolean; reason?: string }
+  ) => {
+    try {
+      const updatedBooking: Booking = {
+        ...booking,
+        includeVenueHall: true,
+        venueHallCharge: charge,
+      };
+
+      setBookings(prev => prev.map(b => b.id === booking.id ? updatedBooking : b));
+      if (selectedBooking?.id === booking.id) {
+        setSelectedBooking(updatedBooking);
+      }
+
+      await setDoc(doc(db, 'booking_requests', booking.id), {
+        includeVenueHall: true,
+        venueHallCharge: charge,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      const cleanData = Object.fromEntries(
+        Object.entries({ ...updatedBooking, updatedAt: new Date().toISOString() }).filter(([_, v]) => v !== undefined)
+      );
+      await setDoc(doc(db, 'bookings', booking.id), cleanData, { merge: true });
+      setShowAddHallModal(false);
+      setCustomAlert({ message: `Venue hall charge added: £${charge.amount}`, type: 'success' });
+    } catch (err) {
+      console.error('Error applying hall charge:', err);
+      setCustomAlert({ message: 'Could not apply hall charge.', type: 'error' });
+    }
+  };
+
+  // ─── CANCELLATION FLOW HANDLERS (MANUAL & WEBSITE BOOKING ORDERS) ───────────
+  const handleOpenCancellationModal = (booking: Booking) => {
+    setCancellationModalBooking(booking);
+    setCancellationReason('Client requested cancellation');
+    setCancellationCustomReason('');
+    setCancellationNotes('');
+  };
+
+  const handleConfirmCancellation = async () => {
+    if (!cancellationModalBooking) return;
+    setIsSubmittingCancellation(true);
+    try {
+      const depositAmt = cancellationModalBooking.deposit || 0;
+      const cancellationPayload = {
+        cancelledAt: new Date().toISOString(),
+        cancelledBy: currentUser?.name || 'Administrator',
+        reason: cancellationReason === 'Other' ? (cancellationCustomReason.trim() || 'Other') : cancellationReason,
+        customReason: cancellationCustomReason.trim(),
+        advancePaid: depositAmt,
+        depositPaid: cancellationModalBooking.depositPaid,
+        depositMethod: cancellationModalBooking.paymentMethodDeposit || 'N/A',
+        notes: cancellationNotes.trim(),
+      };
+
+      const bookingId = cancellationModalBooking.id;
+
+      await setDoc(doc(db, 'booking_requests', bookingId), {
+        status: 'cancelled',
+        cancellationDetails: cancellationPayload,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      await setDoc(doc(db, 'bookings', bookingId), {
+        status: 'cancelled',
+        cancellationDetails: cancellationPayload,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      setBookings(prev => prev.map(b => b.id === bookingId ? {
+        ...b,
+        status: 'cancelled',
+        cancellationDetails: cancellationPayload,
+      } : b));
+
+      if (selectedBooking?.id === bookingId) {
+        setSelectedBooking(prev => prev ? {
+          ...prev,
+          status: 'cancelled',
+          cancellationDetails: cancellationPayload,
+        } : null);
+      }
+
+      setCancellationModalBooking(null);
+      setCustomAlert({ message: 'Order has been successfully cancelled.', type: 'success' });
+    } catch (err) {
+      console.error('Error cancelling booking:', err);
+      setCustomAlert({ message: 'Failed to cancel order. Please try again.', type: 'error' });
+    } finally {
+      setIsSubmittingCancellation(false);
+    }
+  };
+
+  const handleRestoreBooking = async (bookingId: string) => {
+    if (!window.confirm('Are you sure you want to restore and reopen this booking?')) return;
+    try {
+      const target = bookings.find(b => b.id === bookingId);
+      const restoredStatus: BookingStatus = target?.depositPaid ? 'deposit_confirmed' : 'new_enquiry';
+
+      await setDoc(doc(db, 'booking_requests', bookingId), {
+        status: restoredStatus,
+        cancellationDetails: null,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      await setDoc(doc(db, 'bookings', bookingId), {
+        status: restoredStatus,
+        cancellationDetails: null,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      setBookings(prev => prev.map(b => b.id === bookingId ? {
+        ...b,
+        status: restoredStatus,
+        cancellationDetails: undefined,
+      } : b));
+
+      if (selectedBooking?.id === bookingId) {
+        setSelectedBooking(prev => prev ? {
+          ...prev,
+          status: restoredStatus,
+          cancellationDetails: undefined,
+        } : null);
+      }
+      setCustomAlert({ message: 'Booking restored successfully.', type: 'success' });
+    } catch (err) {
+      console.error('Error restoring booking:', err);
+      setCustomAlert({ message: 'Could not restore booking.', type: 'error' });
+    }
+  };
+
+  const buildCancellationWhatsAppText = (booking: Booking): string => {
+    const details = booking.cancellationDetails;
+    const clientFirstName = booking.name.split(' ')[0] || booking.name;
+    const reasonText = details?.reason || 'Client request';
+    const advancePaid = details?.advancePaid || booking.deposit || 0;
+    const advanceStatus = booking.depositPaid && advancePaid > 0 
+      ? `• Advance Amount Paid: £${advancePaid.toLocaleString()} (${booking.paymentMethodDeposit || 'Received'})\n`
+      : '• Advance Amount Paid: £0 / No advance received\n';
+
+    return `Dear ${clientFirstName},
+
+This is an official cancellation confirmation from *Honeymoon Events* regarding your reservation.
+
+*ORDER CANCELLATION DETAILS*
+• Order ID: #${booking.id}
+• Event Type: ${booking.eventType}
+• Original Scheduled Date: ${booking.date}
+• Reason for Cancellation: ${reasonText}
+${advanceStatus}${details?.notes ? `• Cancellation Remarks: ${details.notes}\n` : ''}
+Should you require any further assistance or wish to book an event in the future, please do not hesitate to contact us.
+
+Warm regards,
+*Honeymoon Events Management*
+📞 +44 20 8570 5678 | 🌐 honeymoonevents.co.uk`;
+  };
+
+  // ─── BOOKING TRACKER PDF EXPORT (FILTERED & SINGLE ORDER) ────────────────────
+  const handleDownloadFilteredTrackerPDF = (filteredList: Booking[]) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Pop-up was blocked. Please allow pop-ups to download/print the tracker report.');
+      return;
+    }
+
+    const totalOrders = filteredList.length;
+    const totalRevenue = filteredList.reduce((sum, b) => sum + getTotalAmount(b), 0);
+    const totalDiscounts = filteredList.reduce((sum, b) => sum + getDiscountAmount(b), 0);
+    const totalDeposits = filteredList.reduce((sum, b) => sum + (b.depositPaid ? b.deposit : 0), 0);
+    const totalBalance = filteredList.reduce((sum, b) => {
+      const isFinalPaid = b.finalPaymentPaid;
+      if (isFinalPaid) return sum;
+      const grand = getTotalAmount(b);
+      const paid = b.depositPaid ? b.deposit : 0;
+      return sum + Math.max(0, grand - paid);
+    }, 0);
+
+    const nowStr = new Date().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+
+    const rowsHTML = filteredList.map((b) => {
+      const grandTotal = getTotalAmount(b);
+      const discount = getDiscountAmount(b);
+      const hallFee = getBookingHallCharge(b);
+      const isDepositPaid = b.depositPaid;
+      const isFinalPaid = b.finalPaymentPaid;
+      const balanceDue = isFinalPaid ? 0 : Math.max(0, grandTotal - (isDepositPaid ? b.deposit : 0));
+
+      return `
+        <tr>
+          <td style="font-weight:600; font-family:monospace; color:#374151;">#${b.id.slice(0, 8)}</td>
+          <td>
+            <strong>${b.name}</strong><br/>
+            <span style="font-size:11px; color:#6B7280;">${b.phone} | ${b.email}</span>
+          </td>
+          <td>
+            <strong>${b.eventType}</strong><br/>
+            <span style="font-size:11px; color:#6B7280;">Date: ${b.date} (${b.time})</span>
+          </td>
+          <td style="text-align:center;">${b.adults ?? b.guests} adults${(b.kids4to10 || 0) > 0 ? ` + ${b.kids4to10} kids` : ''}</td>
+          <td>
+            <span style="font-size:11px;">${b.selectedMenu || b.package}</span>
+            ${hallFee ? `<br/><span style="font-size:10px; color:#4338CA;">🏛️ ${hallFee.label} (£${hallFee.amount})</span>` : ''}
+          </td>
+          <td style="text-align:right; font-weight:600;">£${grandTotal.toLocaleString()}</td>
+          <td style="text-align:right; color:#DC2626;">${discount > 0 ? `-£${discount.toLocaleString()}` : '—'}</td>
+          <td style="text-align:right; color:#059669; font-weight:600;">
+            ${isDepositPaid ? `£${b.deposit.toLocaleString()}` : `<span style="color:#D97706;">Pending</span>`}
+          </td>
+          <td style="text-align:right; font-weight:600; color:${balanceDue === 0 ? '#059669' : '#92400E'};">
+            ${balanceDue === 0 ? '£0 (Paid)' : `£${balanceDue.toLocaleString()}`}
+          </td>
+          <td style="text-align:center;">
+            <span style="display:inline-block; padding:3px 8px; border-radius:9999px; font-size:11px; font-weight:700; ${
+              b.status === 'completed' ? 'background:#ECFDF5; color:#065F46;' :
+              b.status === 'cancelled' ? 'background:#FFE4E6; color:#9F1239;' :
+              b.status.includes('deposit') ? 'background:#FEF3C7; color:#92400E;' :
+              'background:#F3F4F6; color:#374151;'
+            }">
+              ${STATUS_LABELS[b.status] || b.status}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Honeymoon Events - Booking Tracker Report</title>
+        <meta charset="utf-8" />
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; color: #1F2937; background: #fff; }
+          .no-print-bar { display: flex; justify-content: space-between; align-items: center; background: #111827; color: white; padding: 12px 20px; border-radius: 8px; margin-bottom: 24px; }
+          .no-print-btn { background: #C8860A; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+          .no-print-btn:hover { background: #E09812; }
+          @media print { .no-print-bar { display: none !important; } @page { margin: 12mm; size: landscape; } body { margin: 0; } }
+          .header-box { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #C8860A; padding-bottom: 16px; margin-bottom: 20px; }
+          .title { font-size: 24px; font-weight: 800; color: #111827; margin: 0; }
+          .subtitle { font-size: 13px; color: #6B7280; margin-top: 4px; }
+          .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
+          .kpi-card { background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 12px 14px; }
+          .kpi-title { font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; margin-bottom: 4px; }
+          .kpi-value { font-size: 18px; font-weight: 800; color: #111827; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th { background: #F3F4F6; text-align: left; padding: 8px 10px; font-weight: 700; color: #374151; border-bottom: 2px solid #D1D5DB; }
+          td { padding: 9px 10px; border-bottom: 1px solid #E5E7EB; vertical-align: top; }
+          tr:nth-child(even) td { background: #FAFAFA; }
+        </style>
+      </head>
+      <body>
+        <div class="no-print-bar">
+          <div><strong>Booking Tracker Filtered Export</strong> — Ready for PDF download or print</div>
+          <div>
+            <button class="no-print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+          </div>
+        </div>
+        <div class="header-box">
+          <div>
+            <h1 class="title">HONEYMOON EVENTS</h1>
+            <div class="subtitle">Comprehensive Booking &amp; Order Tracker Report • Generated: ${nowStr}</div>
+            <div style="font-size:11px; color:#4B5563; margin-top:6px;">
+              <strong>Active Filters:</strong> Status: ${trackerStatusFilter.toUpperCase()} | Event: ${trackerEventFilter.toUpperCase()} | Date Query: ${trackerDateFilter || 'All'} | Search: "${trackerSearch || 'None'}"
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:12px; font-weight:bold; color:#C8860A;">CONFIDENTIAL OPERATIONS REPORT</div>
+            <div style="font-size:11px; color:#6B7280;">Honeymoon Banquet Hall &amp; Catering</div>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-title">Total Bookings</div>
+            <div class="kpi-value">${totalOrders}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Gross Revenue</div>
+            <div class="kpi-value">£${totalRevenue.toLocaleString()}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Total Discounts</div>
+            <div class="kpi-value" style="color:#DC2626;">-£${totalDiscounts.toLocaleString()}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Deposits Received</div>
+            <div class="kpi-value" style="color:#059669;">£${totalDeposits.toLocaleString()}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Pending Balance</div>
+            <div class="kpi-value" style="color:#B45309;">£${totalBalance.toLocaleString()}</div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Customer</th>
+              <th>Event &amp; Date</th>
+              <th style="text-align:center;">Guests</th>
+              <th>Package &amp; Venue</th>
+              <th style="text-align:right;">Total</th>
+              <th style="text-align:right;">Discount</th>
+              <th style="text-align:right;">Advance</th>
+              <th style="text-align:right;">Balance</th>
+              <th style="text-align:center;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHTML}
+          </tbody>
+        </table>
+
+        <div style="margin-top:24px; font-size:11px; color:#9CA3AF; text-align:center; border-top:1px solid #E5E7EB; padding-top:12px;">
+          Generated automatically by Honeymoon Events Management Dashboard • All records reconciled with live booking registers.
+        </div>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 400);
+  };
+
+  const handleDownloadSingleBookingTrackerPDF = (tb: Booking) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Pop-up was blocked. Please allow pop-ups to download/print the tracker sheet.');
+      return;
+    }
+
+    const grandTotal = getTotalAmount(tb);
+    const discountAmt = getDiscountAmount(tb);
+    const hallCharge = getBookingHallCharge(tb);
+    const depositAmt = tb.deposit || 0;
+    const isDepositPaid = tb.depositPaid;
+    const isFinalPaid = tb.finalPaymentPaid;
+    const balanceDue = isFinalPaid ? 0 : Math.max(0, grandTotal - (isDepositPaid ? depositAmt : 0));
+    const nowStr = new Date().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Booking #${tb.id} - Complete Timeline & Audit Record</title>
+        <meta charset="utf-8" />
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 25px; color: #1F2937; background: #fff; }
+          .no-print-bar { display: flex; justify-content: space-between; align-items: center; background: #111827; color: white; padding: 12px 20px; border-radius: 8px; margin-bottom: 24px; }
+          .no-print-btn { background: #C8860A; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+          @media print { .no-print-bar { display: none !important; } @page { margin: 15mm; size: portrait; } body { margin: 0; } }
+          .header { border-bottom: 2px solid #C8860A; padding-bottom: 14px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+          .brand { font-size: 22px; font-weight: 800; color: #111827; }
+          .badge { display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 700; background: #FEF3C7; color: #92400E; }
+          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+          .card { background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 14px; }
+          .card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6B7280; margin-bottom: 8px; }
+          .info-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; }
+          .info-label { color: #6B7280; font-weight: 500; }
+          .info-val { font-weight: 600; color: #111827; }
+          .timeline { border-left: 2px solid #C8860A; margin: 16px 0 20px 10px; padding-left: 18px; }
+          .timeline-item { position: relative; margin-bottom: 16px; font-size: 12px; }
+          .timeline-dot { position: absolute; left: -24px; top: 2px; width: 10px; height: 10px; border-radius: 50%; background: #C8860A; border: 2px solid white; box-shadow: 0 0 0 1px #C8860A; }
+          .timeline-title { font-weight: 700; color: #111827; }
+          .timeline-desc { color: #4B5563; margin-top: 2px; }
+        </style>
+      </head>
+      <body>
+        <div class="no-print-bar">
+          <div><strong>Order Tracker Dossier: #${tb.id}</strong> (${tb.name})</div>
+          <div><button class="no-print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button></div>
+        </div>
+
+        <div class="header">
+          <div>
+            <div class="brand">HONEYMOON EVENTS</div>
+            <div style="font-size:13px; color:#4B5563; margin-top:3px;">Official Booking Dossier &amp; Lifecycle Audit Trail</div>
+            <div style="font-size:11px; color:#9CA3AF; margin-top:4px;">Generated: ${nowStr}</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="badge">${STATUS_LABELS[tb.status] || tb.status}</div>
+            <div style="font-size:11px; color:#6B7280; margin-top:6px;">Booking ID: #${tb.id}</div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <div class="card-title">Customer Information</div>
+            <div class="info-row"><span class="info-label">Full Name:</span><span class="info-val">${tb.name}</span></div>
+            <div class="info-row"><span class="info-label">Phone:</span><span class="info-val">${tb.phone}</span></div>
+            <div class="info-row"><span class="info-label">Email:</span><span class="info-val">${tb.email}</span></div>
+            <div class="info-row"><span class="info-label">Enquiry Date:</span><span class="info-val">${tb.enquiryDate || 'N/A'}</span></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Event Logistics</div>
+            <div class="info-row"><span class="info-label">Event Type:</span><span class="info-val">${tb.eventType}</span></div>
+            <div class="info-row"><span class="info-label">Event Date:</span><span class="info-val">${tb.date}</span></div>
+            <div class="info-row"><span class="info-label">Time Session:</span><span class="info-val">${tb.time}</span></div>
+            <div class="info-row"><span class="info-label">Guest Count:</span><span class="info-val">${tb.adults ?? tb.guests} Adults, ${tb.kids4to10 || 0} Kids</span></div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <div class="card-title">Package &amp; Venue Allocation</div>
+            <div class="info-row"><span class="info-label">Selected Menu:</span><span class="info-val">${tb.selectedMenu || tb.package}</span></div>
+            <div class="info-row"><span class="info-label">Food Package Base:</span><span class="info-val">£${tb.baseAmount.toLocaleString()}</span></div>
+            <div class="info-row"><span class="info-label">Venue Hall Hire:</span><span class="info-val">${hallCharge ? `${hallCharge.label} (+£${hallCharge.amount.toLocaleString()})` : 'No Hall Fee (£0 / Offsite)'}</span></div>
+            ${(tb.extraCharges || []).length > 0 ? `
+              <div class="info-row"><span class="info-label">Extra Services:</span><span class="info-val">£${(tb.extraCharges || []).reduce((s, c) => s + c.amount, 0).toLocaleString()}</span></div>
+            ` : ''}
+          </div>
+
+          <div class="card">
+            <div class="card-title">Financial Settlement &amp; Discount</div>
+            <div class="info-row"><span class="info-label">Total Amount:</span><span class="info-val">£${grandTotal.toLocaleString()}</span></div>
+            ${discountAmt > 0 ? `
+              <div class="info-row"><span class="info-label">Discount Granted:</span><span class="info-val" style="color:#DC2626;">-£${discountAmt.toLocaleString()} (${tb.discount?.reason || 'Approved Discount'})</span></div>
+            ` : ''}
+            <div class="info-row"><span class="info-label">Advance Deposit:</span><span class="info-val" style="color:#059669;">£${depositAmt.toLocaleString()} (${isDepositPaid ? 'Received ✓' : 'Pending'})</span></div>
+            <div class="info-row"><span class="info-label">Payment Method:</span><span class="info-val">${tb.paymentMethodDeposit || 'Bank Transfer'}</span></div>
+            <div class="info-row"><span class="info-label">Outstanding Balance:</span><span class="info-val" style="color:${balanceDue === 0 ? '#059669' : '#B45309'};">${balanceDue === 0 ? '£0 (Fully Settled)' : `£${balanceDue.toLocaleString()}`}</span></div>
+          </div>
+        </div>
+
+        ${tb.cancellationDetails ? `
+          <div style="background:#FFF1F2; border:1px solid #FECDD3; border-radius:8px; padding:14px; margin-bottom:20px;">
+            <div style="font-size:12px; font-weight:700; color:#9F1239; margin-bottom:6px;">⚠️ CANCELLATION AUDIT RECORD</div>
+            <div style="font-size:12px; color:#4C0519;">
+              <strong>Cancelled On:</strong> ${new Date(tb.cancellationDetails.cancelledAt).toLocaleString('en-GB')}<br/>
+              <strong>Cancelled By:</strong> ${tb.cancellationDetails.cancelledBy || 'Administrator'}<br/>
+              <strong>Reason:</strong> ${tb.cancellationDetails.reason}<br/>
+              <strong>Advance Paid:</strong> ${tb.cancellationDetails.advancePaid > 0 ? `£${(tb.cancellationDetails.advancePaid || 0).toLocaleString()} (Received)` : '£0 (No advance paid)'}
+              ${tb.cancellationDetails.notes ? `<br/><strong>Remarks:</strong> ${tb.cancellationDetails.notes}` : ''}
+            </div>
+          </div>
+        ` : ''}
+
+        <div style="font-size:13px; font-weight:700; color:#111827; margin-bottom:12px;">Complete Chronological Lifecycle &amp; Audit Trail</div>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-dot"></div>
+            <div class="timeline-title">1. Enquiry Ingestion</div>
+            <div class="timeline-desc">Initial enquiry logged on ${tb.enquiryDate || 'system launch'} for ${tb.eventType} (${tb.guests} guests).</div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot"></div>
+            <div class="timeline-title">2. Menu &amp; Catering Selection</div>
+            <div class="timeline-desc">Package assigned: <strong>${tb.selectedMenu || tb.package}</strong>. Selected items and dish checklist catalogued for chef coordination.</div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot"></div>
+            <div class="timeline-title">3. Venue &amp; Hall Hire Policy</div>
+            <div class="timeline-desc">${hallCharge ? `Venue hall hire fee of £${hallCharge.amount} explicitly applied (${hallCharge.label}).` : 'No venue hall fee applied (£0 / offsite catering). Default dry hire removed.'}</div>
+          </div>
+          ${tb.discount ? `
+            <div class="timeline-item">
+              <div class="timeline-dot" style="background:#DC2626; box-shadow:0 0 0 1px #DC2626;"></div>
+              <div class="timeline-title">4. Discount Authorized</div>
+              <div class="timeline-desc">Special concession granted: ${tb.discount.type === 'percentage' ? `${tb.discount.value}%` : `£${tb.discount.value}`} (-£${discountAmt.toLocaleString()}). Reason: "${tb.discount.reason}".</div>
+            </div>
+          ` : ''}
+          <div class="timeline-item">
+            <div class="timeline-dot" style="background:${isDepositPaid ? '#059669' : '#D97706'}; box-shadow:0 0 0 1px ${isDepositPaid ? '#059669' : '#D97706'};"></div>
+            <div class="timeline-title">5. Advance Booking Deposit</div>
+            <div class="timeline-desc">${isDepositPaid ? `Deposit of £${depositAmt.toLocaleString()} received and confirmed via ${tb.paymentMethodDeposit || 'Bank Transfer'}.` : `Advance deposit of £${depositAmt.toLocaleString()} pending confirmation.`}</div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot" style="background:${isFinalPaid ? '#059669' : '#6B7280'}; box-shadow:0 0 0 1px ${isFinalPaid ? '#059669' : '#6B7280'};"></div>
+            <div class="timeline-title">6. Final Invoice &amp; Settlement</div>
+            <div class="timeline-desc">${isFinalPaid ? `Final settlement received and verified. Balance cleared in full via ${tb.paymentMethodFinal || 'Bank Transfer'}.` : `Remaining balance due: £${balanceDue.toLocaleString()}. Due 14 days before event.`}</div>
+          </div>
+          ${tb.status === 'cancelled' ? `
+            <div class="timeline-item">
+              <div class="timeline-dot" style="background:#E11D48; box-shadow:0 0 0 1px #E11D48;"></div>
+              <div class="timeline-title">7. Order Cancelled</div>
+              <div class="timeline-desc">${tb.cancellationDetails?.reason || 'Cancelled by administrative action.'}</div>
+            </div>
+          ` : tb.status === 'completed' ? `
+            <div class="timeline-item">
+              <div class="timeline-dot" style="background:#059669; box-shadow:0 0 0 1px #059669;"></div>
+              <div class="timeline-title">7. Event Successfully Completed</div>
+              <div class="timeline-desc">Event concluded with complete catering execution and final account closure.</div>
+            </div>
+          ` : ''}
+        </div>
+
+        ${tb.notes ? `
+          <div class="card" style="margin-top:16px;">
+            <div class="card-title">Customer Requests &amp; Special Notes</div>
+            <div style="font-size:12px; font-style:italic; color:#4B5563;">"${tb.notes}"</div>
+          </div>
+        ` : ''}
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 400);
+  };
+
   const handleBlockDate = async () => {
     if (!blockDateInput) return;
     try {
@@ -1647,7 +2260,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
     const d = new Date(date);
     const dayOfWeek = d.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
     const timeLower = (time || '').toLowerCase();
-    const isDinner = timeLower.includes('dinner') || timeLower.includes('evening') || timeLower.includes('pm');
+    const isDinner = timeLower.includes('dinner') || timeLower.includes('evening') || timeLower.includes('pm') || timeLower.includes('18:') || timeLower.includes('19:') || timeLower.includes('20:');
 
     if (dayOfWeek >= 1 && dayOfWeek <= 4) {
       // Mon–Thu: £100
@@ -1669,6 +2282,33 @@ Once you have completed the transfer, please send us a screenshot of the payment
     return null;
   };
 
+  // Helper to determine whether venue hall hire is included for a specific booking
+  // NOT automatically added by default! Only when explicitly included or configured.
+  const getBookingHallCharge = (b: Booking): { label: string; amount: number; isCustom?: boolean; reason?: string } | null => {
+    // 1. Explicit extra charge matching Hall Hire or Dry Hire
+    const existingExtra = (b.extraCharges || []).find(e => 
+      e.label.toLowerCase().includes('hall hire') || 
+      e.label.toLowerCase().includes('dry hire') ||
+      e.label.toLowerCase().includes('venue hire')
+    );
+    if (existingExtra) {
+      return { label: existingExtra.label, amount: existingExtra.amount };
+    }
+
+    // 2. Explicit venueHallCharge record
+    if (b.venueHallCharge && typeof b.venueHallCharge.amount === 'number' && b.venueHallCharge.amount > 0) {
+      return b.venueHallCharge;
+    }
+
+    // 3. Explicit opt-in flag
+    if (b.includeVenueHall === true) {
+      return getVenueHallCharge(b.date, b.time);
+    }
+
+    // Otherwise by default: NOT added (null)
+    return null;
+  };
+
   const getFoodPackageTotal = (b: Booking) => {
     const subtotal = b.baseAmount + (b.extraCharges || []).reduce((s, c) => s + c.amount, 0);
     return subtotal - getDiscountAmount(b);
@@ -1676,7 +2316,16 @@ Once you have completed the transfer, please send us a screenshot of the payment
 
   const getTotalAmount = (b: Booking) => {
     const food = getFoodPackageTotal(b);
-    const hall = getVenueHallCharge(b.date, b.time);
+    // If hall hire is already included inside extraCharges, it was already accounted for in getFoodPackageTotal
+    const hasHallInExtras = (b.extraCharges || []).some(e => 
+      e.label.toLowerCase().includes('hall hire') || 
+      e.label.toLowerCase().includes('dry hire') ||
+      e.label.toLowerCase().includes('venue hire')
+    );
+    if (hasHallInExtras) {
+      return food;
+    }
+    const hall = getBookingHallCharge(b);
     return food + (hall?.amount || 0);
   };
 
@@ -1700,7 +2349,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
     const kidsPrice = booking.kidsPricePerPerson ?? (pkgObj?.kidsPrice || getKidsPrice(editableKidsPricing, pkgName));
     const kidsUnder4Price = booking.kidsUnder4PricePerPerson ?? 0;
     const pricePerPerson = booking.pricePerPerson ?? (pkgObj?.pricePerPerson || 0);
-    const hallCharge = (booking.extraCharges || []).some(e => e.label.toLowerCase().includes('hall hire')) ? null : getVenueHallCharge(booking.date, booking.time);
+    const hallCharge = (booking.extraCharges || []).some(e => e.label.toLowerCase().includes('hall hire') || e.label.toLowerCase().includes('dry hire')) ? null : getBookingHallCharge(booking);
     const grandTotal = getTotalAmount(booking);
     const discountAmount = getDiscountAmount(booking);
     const finalPaymentPaidAmt = grandTotal - booking.deposit - extraChargesTotal;
@@ -2318,12 +2967,12 @@ Once you have completed the transfer, please send us a screenshot of the payment
 
   // ─── DASHBOARD ────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="h-screen w-full bg-gray-50 flex overflow-hidden">
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />}
 
       {/* Sidebar */}
-      <aside className={`fixed md:static inset-y-0 left-0 z-50 w-60 flex-shrink-0 flex flex-col transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`} style={{ background: 'linear-gradient(180deg, #1A0F00 0%, #2C1A00 100%)' }}>
-        <div className="px-5 py-4 border-b flex items-center gap-2.5" style={{ borderColor: '#3D2800' }}>
+      <aside className={`fixed md:relative top-0 inset-y-0 left-0 z-40 w-60 h-screen flex-shrink-0 flex flex-col overflow-hidden transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`} style={{ background: 'linear-gradient(180deg, #1A0F00 0%, #2C1A00 100%)' }}>
+        <div className="px-5 py-4 border-b flex items-center gap-2.5 flex-shrink-0" style={{ borderColor: '#3D2800' }}>
           <div>
             <img
               src="/assets/images/oie_gAxqzQFu0Ixw-1777831503416.png"
@@ -2344,7 +2993,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </button>
           ))}
         </nav>
-        <div className="px-3 py-4 border-t" style={{ borderColor: '#3D2800' }}>
+        <div className="px-3 py-4 border-t flex-shrink-0" style={{ borderColor: '#3D2800' }}>
           <div className="flex items-center gap-2 px-3 py-2 mb-1">
             <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'rgba(200,134,10,0.2)' }}>
               <Icon name="UserCircleIcon" size={16} style={{ color: '#F0A830' }} />
@@ -2377,7 +3026,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
       </aside>
 
       {/* Main */}
-      <main className="flex-1 overflow-auto min-w-0">
+      <main className="flex-1 h-screen overflow-y-auto min-w-0">
         {/* Top bar */}
         <div className="bg-white border-b border-gray-200 px-4 md:px-6 py-3.5 flex items-center justify-between sticky top-0 z-30">
           <div className="flex items-center gap-3">
@@ -2709,187 +3358,302 @@ Once you have completed the transfer, please send us a screenshot of the payment
 
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[1050px]">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Customer</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Event</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Date</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Amount</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Deposit Paid</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Balance Due</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Discount</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Status</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">WhatsApp</th>
-                        <th className="px-4 py-3"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {filtered.filter(b => b.status !== 'new_enquiry').map((booking) => {
-                        const total = getTotalAmount(booking);
-                        const extraChargesTotal = (booking.extraCharges || []).reduce((s, c) => s + c.amount, 0);
-                        const isDepositPaid = booking.depositPaid || !['new_enquiry', 'menu_sent', 'menu_selected', 'deposit_pending'].includes(booking.status);
-                        const isFinalPaid = booking.finalPaymentPaid || booking.status === 'completed';
-                        const isExtraPaid = booking.status === 'completed' || !!booking.paymentProofExtra || booking.finalPaymentPaid;
+                  {(() => {
+                    const bookingsList = filtered.filter(b => b.status !== 'new_enquiry');
+                    const totalBookingsCount = bookingsList.length;
+                    const totalBookingPages = Math.max(1, Math.ceil(totalBookingsCount / bookingPageSize));
+                    const currentBookingPage = Math.min(Math.max(1, bookingPage), totalBookingPages);
+                    const startBookingIdx = (currentBookingPage - 1) * bookingPageSize;
+                    const endBookingIdx = Math.min(startBookingIdx + bookingPageSize, totalBookingsCount);
+                    const paginatedBookings = bookingsList.slice(startBookingIdx, endBookingIdx);
 
-                        const depositAmt = booking.deposit || (pricingDetails.depositPercentage || 500);
-                        const finalPaymentAmt = Math.max(0, total - depositAmt - extraChargesTotal);
-                        const totalPaid = (isDepositPaid ? depositAmt : 0) +
-                                          (isFinalPaid ? finalPaymentAmt : 0) +
-                                          (isExtraPaid ? extraChargesTotal : 0);
-                        const balanceDue = isFinalPaid ? 0 : Math.max(0, total - totalPaid);
+                    return (
+                      <>
+                        <table className="w-full text-sm min-w-[1050px]">
+                          <thead className="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Customer</th>
+                              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Event</th>
+                              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Date</th>
+                              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Amount</th>
+                              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Deposit Paid</th>
+                              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Balance Due</th>
+                              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Discount</th>
+                              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Status</th>
+                              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">WhatsApp</th>
+                              <th className="px-4 py-3"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {paginatedBookings.map((booking) => {
+                              const total = getTotalAmount(booking);
+                              const extraChargesTotal = (booking.extraCharges || []).reduce((s, c) => s + c.amount, 0);
+                              const isDepositPaid = booking.depositPaid || !['new_enquiry', 'menu_sent', 'menu_selected', 'deposit_pending'].includes(booking.status);
+                              const isFinalPaid = booking.finalPaymentPaid || booking.status === 'completed';
+                              const isExtraPaid = booking.status === 'completed' || !!booking.paymentProofExtra || booking.finalPaymentPaid;
 
-                        return (
-                          <tr key={booking.id} className="hover:bg-gray-50/80 transition-colors">
-                            <td className="px-4 py-3.5">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(200,134,10,0.1)' }}>
-                                  <span className="text-xs font-bold" style={{ color: '#C8860A' }}>{booking.name.charAt(0)}</span>
-                                </div>
-                                <div>
-                                  <div className="font-medium text-gray-900 text-sm">{booking.name}</div>
-                                  <div className="text-xs text-gray-400">{booking.phone}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3.5">
-                              <div className="text-sm text-gray-700">{booking.eventType}</div>
-                              <div className="text-xs text-gray-400">{booking.package}</div>
-                            </td>
-                            <td className="px-4 py-3.5">
-                              <div className="text-sm text-gray-700">{booking.date}</div>
-                              <div className="text-xs text-gray-400">{booking.time}</div>
-                            </td>
+                              const depositAmt = booking.deposit || (pricingDetails.depositPercentage || 500);
+                              const finalPaymentAmt = Math.max(0, total - depositAmt - extraChargesTotal);
+                              const totalPaid = (isDepositPaid ? depositAmt : 0) +
+                                                (isFinalPaid ? finalPaymentAmt : 0) +
+                                                (isExtraPaid ? extraChargesTotal : 0);
+                              const balanceDue = isFinalPaid ? 0 : Math.max(0, total - totalPaid);
 
-                            {/* Total Amount */}
-                            <td className="px-4 py-3.5">
-                              <div className="text-sm font-bold text-gray-900">£{total.toLocaleString()}</div>
-                              <div className="text-[10px] text-gray-400">{booking.guests} Guests</div>
-                            </td>
+                              return (
+                                <tr key={booking.id} className="hover:bg-gray-50/80 transition-colors">
+                                  <td className="px-4 py-3.5">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(200,134,10,0.1)' }}>
+                                        <span className="text-xs font-bold" style={{ color: '#C8860A' }}>{booking.name.charAt(0)}</span>
+                                      </div>
+                                      <div>
+                                        <div className="font-medium text-gray-900 text-sm">{booking.name}</div>
+                                        <div className="text-xs text-gray-400">{booking.phone}</div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3.5">
+                                    <div className="text-sm text-gray-700">{booking.eventType}</div>
+                                    <div className="text-xs text-gray-400">{booking.package}</div>
+                                  </td>
+                                  <td className="px-4 py-3.5">
+                                    <div className="text-sm text-gray-700">{booking.date}</div>
+                                    <div className="text-xs text-gray-400">{booking.time}</div>
+                                  </td>
 
-                            {/* Deposit Paid */}
-                            <td className="px-4 py-3.5">
-                              <div className={`text-sm font-bold ${isDepositPaid ? 'text-emerald-700' : 'text-gray-700'}`}>
-                                £{depositAmt.toLocaleString()}
-                              </div>
-                              <div className="mt-0.5">
-                                <span className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                  isDepositPaid
-                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                    : 'bg-amber-50 text-amber-700 border border-amber-200'
-                                }`}>
-                                  {isDepositPaid ? '✓ Paid' : 'Pending'}
-                                </span>
-                              </div>
-                            </td>
+                                  {/* Total Amount */}
+                                  <td className="px-4 py-3.5">
+                                    <div className="text-sm font-bold text-gray-900">£{total.toLocaleString()}</div>
+                                    <div className="text-[10px] text-gray-400">{booking.guests} Guests</div>
+                                  </td>
 
-                            {/* Balance Due (Pending Amount) */}
-                            <td className="px-4 py-3.5">
-                              {isFinalPaid || balanceDue <= 0 ? (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                  <span>✓</span> Paid in Full
-                                </span>
-                              ) : (
-                                <div>
-                                  <div className="text-sm font-bold text-amber-900">
-                                    £{balanceDue.toLocaleString()}
-                                  </div>
-                                  <span className="text-[10px] text-amber-600 font-semibold">
-                                    Balance Due
-                                  </span>
-                                </div>
-                              )}
-                            </td>
+                                  {/* Deposit Paid */}
+                                  <td className="px-4 py-3.5">
+                                    <div className={`text-sm font-bold ${isDepositPaid ? 'text-emerald-700' : 'text-gray-700'}`}>
+                                      £{depositAmt.toLocaleString()}
+                                    </div>
+                                    <div className="mt-0.5">
+                                      <span className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                        isDepositPaid
+                                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                      }`}>
+                                        {isDepositPaid ? '✓ Paid' : 'Pending'}
+                                      </span>
+                                    </div>
+                                  </td>
 
-                            {/* Discount */}
-                            <td className="px-4 py-3.5">
-                              {booking.discount ? (
-                                <div className="text-sm font-semibold text-red-600">-£{getDiscountAmount(booking).toLocaleString()}</div>
-                              ) : (
-                                <div className="text-sm text-gray-400">—</div>
-                              )}
-                            </td>
+                                  {/* Balance Due (Pending Amount) */}
+                                  <td className="px-4 py-3.5">
+                                    {isFinalPaid || balanceDue <= 0 ? (
+                                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                        <span>✓</span> Paid in Full
+                                      </span>
+                                    ) : (
+                                      <div>
+                                        <div className="text-sm font-bold text-amber-900">
+                                          £{balanceDue.toLocaleString()}
+                                        </div>
+                                        <span className="text-[10px] text-amber-600 font-semibold">
+                                          Balance Due
+                                        </span>
+                                      </div>
+                                    )}
+                                  </td>
 
-                            {/* Status */}
-                            <td className="px-4 py-3.5">
-                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[booking.status]}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[booking.status]}`} />
-                                {STATUS_LABELS[booking.status]}
+                                  {/* Discount */}
+                                  <td className="px-4 py-3.5">
+                                    {booking.discount ? (
+                                      <div className="text-sm font-semibold text-red-600">-£{getDiscountAmount(booking).toLocaleString()}</div>
+                                    ) : (
+                                      <div className="text-sm text-gray-400">—</div>
+                                    )}
+                                  </td>
+
+                                  {/* Status */}
+                                  <td className="px-4 py-3.5">
+                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[booking.status]}`}>
+                                      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[booking.status]}`} />
+                                      {STATUS_LABELS[booking.status]}
+                                    </span>
+                                  </td>
+
+                                  {/* WhatsApp */}
+                                  <td className="px-4 py-3.5">
+                                    <a href={buildWhatsAppLink(booking.phone, `Hi ${booking.name.split(' ')[0]}, this is Honeymoon regarding your ${booking.eventType} booking on ${booking.date}.`)}
+                                      target="_blank" rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
+                                      style={{ background: '#25D366', color: 'white' }}>
+                                      <Icon name="ChatBubbleLeftRightIcon" size={12} />
+                                      Chat
+                                    </a>
+                                  </td>
+
+                                  {/* Actions */}
+                                  <td className="px-4 py-3.5">
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => {
+                                          setEditingBookingForManual(booking);
+                                          setActiveTab('manual_booking');
+                                        }}
+                                        className="text-xs font-semibold flex items-center gap-1 hover:text-amber-800 text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 shadow-2xs transition-colors"
+                                        title="Amend Booking in Full Wizard"
+                                      >
+                                        <Icon name="PencilIcon" size={11} />
+                                        <span>Amend</span>
+                                      </button>
+                                      <button onClick={() => setSelectedBooking(booking)} className="text-xs font-semibold flex items-center gap-1 hover:underline whitespace-nowrap" style={{ color: '#C8860A' }}>
+                                        Manage <Icon name="ChevronRightIcon" size={12} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenCancellationModal(booking);
+                                        }}
+                                        className="text-xs font-semibold flex items-center gap-1 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-1 rounded-lg shadow-2xs transition-colors whitespace-nowrap"
+                                        title={booking.status === 'cancelled' ? 'View cancellation details' : 'Cancel booking order'}
+                                      >
+                                        <Icon name="XCircleIcon" size={11} />
+                                        <span>{booking.status === 'cancelled' ? 'Cancelled' : 'Cancel'}</span>
+                                      </button>
+                                      <div className="flex items-center gap-1 border-l border-gray-200 pl-2">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); generateChefMenuPDF(booking); }}
+                                          className="p-1 rounded hover:bg-amber-50 text-gray-400 hover:text-amber-700 transition-colors"
+                                          title="Download / Print Menu PDF (Chef Sheet)"
+                                        >
+                                          <Icon name="ClipboardDocumentListIcon" size={14} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); downloadInvoicePDF(booking, true); }}
+                                          className="p-1 rounded hover:bg-emerald-50 text-gray-400 hover:text-emerald-700 transition-colors"
+                                          title="Download Deposit Invoice PDF"
+                                        >
+                                          <Icon name="DocumentTextIcon" size={14} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); downloadInvoicePDF(booking, false); }}
+                                          className="p-1 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-700 transition-colors"
+                                          title="Download Final Invoice PDF"
+                                        >
+                                          <Icon name="DocumentCheckIcon" size={14} />
+                                        </button>
+                                      </div>
+                                      {currentUser?.role === 'Super Admin' && (
+                                        <button onClick={() => handleDeleteBooking(booking.id, booking.name)} className="text-red-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors" title="Delete Booking">
+                                          <Icon name="TrashIcon" size={14} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        {totalBookingsCount === 0 && (
+                          <div className="text-center py-12 text-gray-400 text-sm">
+                            <Icon name="CalendarDaysIcon" size={32} className="mx-auto mb-2 text-gray-300" />
+                            No bookings match your filters
+                          </div>
+                        )}
+                        {totalBookingsCount > 0 && (
+                          <div className="px-4 py-3 bg-gray-50/90 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-600">
+                            <div className="flex items-center gap-3">
+                              <span>
+                                Showing <span className="font-semibold text-gray-900">{startBookingIdx + 1}</span> to{' '}
+                                <span className="font-semibold text-gray-900">{endBookingIdx}</span> of{' '}
+                                <span className="font-semibold text-gray-900">{totalBookingsCount}</span> bookings
                               </span>
-                            </td>
-
-                            {/* WhatsApp */}
-                            <td className="px-4 py-3.5">
-                              <a href={buildWhatsAppLink(booking.phone, `Hi ${booking.name.split(' ')[0]}, this is Honeymoon regarding your ${booking.eventType} booking on ${booking.date}.`)}
-                                target="_blank" rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
-                                style={{ background: '#25D366', color: 'white' }}>
-                                <Icon name="ChatBubbleLeftRightIcon" size={12} />
-                                Chat
-                              </a>
-                            </td>
-
-                            {/* Actions */}
-                            <td className="px-4 py-3.5">
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => {
-                                    setEditingBookingForManual(booking);
-                                    setActiveTab('manual_booking');
+                              <div className="flex items-center gap-1.5 border-l border-gray-300 pl-3">
+                                <span className="text-gray-500">Rows per page:</span>
+                                <select
+                                  value={bookingPageSize}
+                                  onChange={(e) => {
+                                    setBookingPageSize(Number(e.target.value));
+                                    setBookingPage(1);
                                   }}
-                                  className="text-xs font-semibold flex items-center gap-1 hover:text-amber-800 text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 shadow-2xs transition-colors"
-                                  title="Amend Booking in Full Wizard"
+                                  className="bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs font-semibold text-gray-800 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs"
                                 >
-                                  <Icon name="PencilIcon" size={11} />
-                                  <span>Amend</span>
-                                </button>
-                                <button onClick={() => setSelectedBooking(booking)} className="text-xs font-semibold flex items-center gap-1 hover:underline whitespace-nowrap" style={{ color: '#C8860A' }}>
-                                  Manage <Icon name="ChevronRightIcon" size={12} />
-                                </button>
-                                <div className="flex items-center gap-1 border-l border-gray-200 pl-2">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); generateChefMenuPDF(booking); }}
-                                    className="p-1 rounded hover:bg-amber-50 text-gray-400 hover:text-amber-700 transition-colors"
-                                    title="Download / Print Menu PDF (Chef Sheet)"
-                                  >
-                                    <Icon name="ClipboardDocumentListIcon" size={14} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); downloadInvoicePDF(booking, true); }}
-                                    className="p-1 rounded hover:bg-emerald-50 text-gray-400 hover:text-emerald-700 transition-colors"
-                                    title="Download Deposit Invoice PDF"
-                                  >
-                                    <Icon name="DocumentTextIcon" size={14} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); downloadInvoicePDF(booking, false); }}
-                                    className="p-1 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-700 transition-colors"
-                                    title="Download Final Invoice PDF"
-                                  >
-                                    <Icon name="DocumentCheckIcon" size={14} />
-                                  </button>
-                                </div>
-                                {currentUser?.role === 'Super Admin' && (
-                                  <button onClick={() => handleDeleteBooking(booking.id, booking.name)} className="text-red-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors" title="Delete Booking">
-                                    <Icon name="TrashIcon" size={14} />
-                                  </button>
-                                )}
+                                  <option value={10}>10</option>
+                                  <option value={20}>20</option>
+                                  <option value={50}>50</option>
+                                  <option value={100}>100</option>
+                                </select>
                               </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  {filtered.filter(b => b.status !== 'new_enquiry').length === 0 && (
-                    <div className="text-center py-12 text-gray-400 text-sm">
-                      <Icon name="CalendarDaysIcon" size={32} className="mx-auto mb-2 text-gray-300" />
-                      No bookings match your filters
-                    </div>
-                  )}
+                            </div>
+
+                            {totalBookingPages > 1 && (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setBookingPage(1)}
+                                  disabled={currentBookingPage === 1}
+                                  className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                                  title="First Page"
+                                >
+                                  « First
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setBookingPage(prev => Math.max(1, prev - 1))}
+                                  disabled={currentBookingPage === 1}
+                                  className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                                  title="Previous Page"
+                                >
+                                  ‹ Prev
+                                </button>
+
+                                {getPaginationRange(currentBookingPage, totalBookingPages).map((p, idx) => (
+                                  p === '...' ? (
+                                    <span key={`ellipsis-${idx}`} className="px-2 py-1 text-gray-400">...</span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      key={p}
+                                      onClick={() => setBookingPage(Number(p))}
+                                      className={`min-w-[28px] h-7 px-2 rounded-lg font-semibold text-xs transition-all ${
+                                        currentBookingPage === p
+                                          ? 'text-white shadow-sm'
+                                          : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-700'
+                                      }`}
+                                      style={currentBookingPage === p ? { background: 'linear-gradient(135deg, #C8860A, #F0A830)' } : {}}
+                                    >
+                                      {p}
+                                    </button>
+                                  )
+                                ))}
+
+                                <button
+                                  type="button"
+                                  onClick={() => setBookingPage(prev => Math.min(totalBookingPages, prev + 1))}
+                                  disabled={currentBookingPage === totalBookingPages}
+                                  className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                                  title="Next Page"
+                                >
+                                  Next ›
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setBookingPage(totalBookingPages)}
+                                  disabled={currentBookingPage === totalBookingPages}
+                                  className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                                  title="Last Page"
+                                >
+                                  Last »
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -3841,167 +4605,272 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   </span>
                 </div>
               </div>
-              {historyBookings.filter(b => !historySearch || b.name.toLowerCase().includes(historySearch.toLowerCase()) || b.email.toLowerCase().includes(historySearch.toLowerCase()) || b.phone.toLowerCase().includes(historySearch.toLowerCase()) || b.eventType.toLowerCase().includes(historySearch.toLowerCase())).map((b) => (
-                <div key={b.id} className="bg-white rounded-xl border border-gray-200 p-5">
-                  <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(200,134,10,0.1)' }}>
-                        <span className="text-base font-bold" style={{ color: '#C8860A' }}>{b.name.charAt(0)}</span>
-                      </div>
-                      <div>
-                        <div className="font-semibold text-gray-900">{b.name}</div>
-                        <div className="text-xs text-gray-400">{b.email} · {b.phone}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[b.status]}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[b.status]}`} />
-                        {STATUS_LABELS[b.status]}
-                      </span>
-                      <div className="flex gap-1.5 flex-wrap">
-                        {/* 0. Amend in Wizard */}
-                        <button
-                          onClick={() => { setEditingBookingForManual(b); setActiveTab('manual_booking'); }}
-                          className="text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-amber-200 shadow-2xs"
-                          title="Amend booking in 4-step wizard"
-                        >
-                          <Icon name="PencilSquareIcon" size={13} className="text-[#C8860A]" />
-                          Amend
-                        </button>
-                        {/* Open Drawer */}
-                        <button
-                          onClick={() => setSelectedBooking(b)}
-                          className="text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold shadow-2xs"
-                          title="Open Details & Workflow Drawer"
-                        >
-                          <Icon name="EyeIcon" size={13} />
-                          Details
-                        </button>
-                        {/* 1. Menu PDF for Chef */}
-                        <button
-                          onClick={() => generateChefMenuPDF(b)}
-                          className="text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-amber-200 shadow-2xs"
-                          title="Download / Print Chef Menu Sheet PDF"
-                        >
-                          <Icon name="ClipboardDocumentListIcon" size={13} className="text-[#C8860A]" />
-                          Menu PDF
-                        </button>
-                        {/* 2. Deposit Invoice */}
-                        <button
-                          onClick={() => downloadInvoicePDF(b, true)}
-                          className="text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-emerald-200 shadow-2xs"
-                          title="Download Deposit Invoice PDF"
-                        >
-                          <Icon name="DocumentTextIcon" size={13} />
-                          Deposit PDF
-                        </button>
-                        {/* 3. Final Invoice */}
-                        <button
-                          onClick={() => downloadInvoicePDF(b, false)}
-                          className="text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-blue-200 shadow-2xs"
-                          title="Download Final Invoice PDF"
-                        >
-                          <Icon name="DocumentCheckIcon" size={13} />
-                          Final PDF
-                        </button>
-                      </div>
-                      {currentUser?.role === 'Super Admin' && (
-                        <button onClick={() => handleDeleteBooking(b.id, b.name)} className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 p-1.5 rounded-lg transition-colors" title="Delete History Record">
-                          <Icon name="TrashIcon" size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                    {[
-                      { label: 'Event Type', value: b.eventType },
-                      { label: 'Event Date', value: b.date },
-                      { label: 'Guests', value: `${b.guests} people` },
-                      { label: 'Package', value: b.selectedMenu || b.package },
-                    ].map((f) => (
-                      <div key={f.label} className="bg-gray-50 rounded-lg p-2.5">
-                        <div className="text-xs text-gray-400 mb-0.5">{f.label}</div>
-                        <div className="text-sm font-medium text-gray-800">{f.value}</div>
+              {(() => {
+                const filteredHistory = historyBookings.filter(b => !historySearch || b.name.toLowerCase().includes(historySearch.toLowerCase()) || b.email.toLowerCase().includes(historySearch.toLowerCase()) || b.phone.toLowerCase().includes(historySearch.toLowerCase()) || b.eventType.toLowerCase().includes(historySearch.toLowerCase()));
+                const totalHistoryCount = filteredHistory.length;
+                const totalHistoryPages = Math.max(1, Math.ceil(totalHistoryCount / historyPageSize));
+                const currentHistoryPage = Math.min(Math.max(1, historyPage), totalHistoryPages);
+                const startHistoryIdx = (currentHistoryPage - 1) * historyPageSize;
+                const endHistoryIdx = Math.min(startHistoryIdx + historyPageSize, totalHistoryCount);
+                const paginatedHistory = filteredHistory.slice(startHistoryIdx, endHistoryIdx);
+
+                return (
+                  <>
+                    {paginatedHistory.map((b) => (
+                      <div key={b.id} className="bg-white rounded-xl border border-gray-200 p-5">
+                        <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(200,134,10,0.1)' }}>
+                              <span className="text-base font-bold" style={{ color: '#C8860A' }}>{b.name.charAt(0)}</span>
+                            </div>
+                            <div>
+                              <div className="font-semibold text-gray-900">{b.name}</div>
+                              <div className="text-xs text-gray-400">{b.email} · {b.phone}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[b.status]}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[b.status]}`} />
+                              {STATUS_LABELS[b.status]}
+                            </span>
+                            <div className="flex gap-1.5 flex-wrap">
+                              {/* 0. Amend in Wizard */}
+                              <button
+                                onClick={() => { setEditingBookingForManual(b); setActiveTab('manual_booking'); }}
+                                className="text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-amber-200 shadow-2xs"
+                                title="Amend booking in 4-step wizard"
+                              >
+                                <Icon name="PencilSquareIcon" size={13} className="text-[#C8860A]" />
+                                Amend
+                              </button>
+                              {/* Open Drawer */}
+                              <button
+                                onClick={() => setSelectedBooking(b)}
+                                className="text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold shadow-2xs"
+                                title="Open Details & Workflow Drawer"
+                              >
+                                <Icon name="EyeIcon" size={13} />
+                                Details
+                              </button>
+                              {/* 1. Menu PDF for Chef */}
+                              <button
+                                onClick={() => generateChefMenuPDF(b)}
+                                className="text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-amber-200 shadow-2xs"
+                                title="Download / Print Chef Menu Sheet PDF"
+                              >
+                                <Icon name="ClipboardDocumentListIcon" size={13} className="text-[#C8860A]" />
+                                Menu PDF
+                              </button>
+                              {/* 2. Deposit Invoice */}
+                              <button
+                                onClick={() => downloadInvoicePDF(b, true)}
+                                className="text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-emerald-200 shadow-2xs"
+                                title="Download Deposit Invoice PDF"
+                              >
+                                <Icon name="DocumentTextIcon" size={13} />
+                                Deposit PDF
+                              </button>
+                              {/* 3. Final Invoice */}
+                              <button
+                                onClick={() => downloadInvoicePDF(b, false)}
+                                className="text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-blue-200 shadow-2xs"
+                                title="Download Final Invoice PDF"
+                              >
+                                <Icon name="DocumentCheckIcon" size={13} />
+                                Final PDF
+                              </button>
+                            </div>
+                            {currentUser?.role === 'Super Admin' && (
+                              <button onClick={() => handleDeleteBooking(b.id, b.name)} className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 p-1.5 rounded-lg transition-colors" title="Delete History Record">
+                                <Icon name="TrashIcon" size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                          {[
+                            { label: 'Event Type', value: b.eventType },
+                            { label: 'Event Date', value: b.date },
+                            { label: 'Guests', value: `${b.guests} people` },
+                            { label: 'Package', value: b.selectedMenu || b.package },
+                          ].map((f) => (
+                            <div key={f.label} className="bg-gray-50 rounded-lg p-2.5">
+                              <div className="text-xs text-gray-400 mb-0.5">{f.label}</div>
+                              <div className="text-sm font-medium text-gray-800">{f.value}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="border-t border-gray-100 pt-4">
+                          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Financial Summary</div>
+                          <div className="flex flex-wrap gap-4 text-sm">
+                            <div><span className="text-gray-500">Base: </span><span className="font-semibold text-gray-900">£{b.baseAmount.toLocaleString()}</span></div>
+                            {b.extraCharges.length > 0 && (
+                              <div><span className="text-gray-500">Extras: </span><span className="font-semibold text-amber-700">+£{b.extraCharges.reduce((s, c) => s + c.amount, 0).toLocaleString()}</span></div>
+                            )}
+                            {b.discount && (
+                              <div><span className="text-gray-500">Discount: </span><span className="font-semibold text-red-600">-£{getDiscountAmount(b).toLocaleString()}</span></div>
+                            )}
+                            <div><span className="text-gray-500">Total: </span><span className="font-bold" style={{ color: '#C8860A' }}>£{getTotalAmount(b).toLocaleString()}</span></div>
+                            <div className="flex items-center gap-1"><Icon name="CheckCircleIcon" size={14} className="text-emerald-500" /><span className="text-emerald-700 font-medium text-xs">Fully Paid</span></div>
+                          </div>
+                        </div>
+
+                        {/* Payment proofs */}
+                        {(b.paymentProofDeposit || b.paymentProofFinal || b.paymentProofExtra) && (
+                          <div className="border-t border-gray-100 pt-4 mt-4">
+                            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Payment Proofs</div>
+                            <div className="flex gap-3">
+                              {b.paymentProofDeposit && (
+                                <div
+                                  className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group bg-gray-50 flex-shrink-0"
+                                  onClick={() => {
+                                    openImagePreview(b.paymentProofDeposit, "Deposit Payment Proof");
+                                  }}
+                                  title="View Deposit Proof"
+                                >
+                                  <img src={b.paymentProofDeposit} alt="Deposit" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <Icon name="MagnifyingGlassPlusIcon" size={16} className="text-white" />
+                                  </div>
+                                  <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] text-center py-0.5">Deposit</div>
+                                </div>
+                              )}
+                              {b.paymentProofFinal && (
+                                <div
+                                  className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group bg-gray-50 flex-shrink-0"
+                                  onClick={() => {
+                                    openImagePreview(b.paymentProofFinal, "Final Payment Proof");
+                                  }}
+                                  title="View Final Proof"
+                                >
+                                  <img src={b.paymentProofFinal} alt="Final" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <Icon name="MagnifyingGlassPlusIcon" size={16} className="text-white" />
+                                  </div>
+                                  <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] text-center py-0.5">Final</div>
+                                </div>
+                              )}
+                              {b.paymentProofExtra && (
+                                <div
+                                  className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group bg-gray-50 flex-shrink-0"
+                                  onClick={() => {
+                                    openImagePreview(b.paymentProofExtra, "Extra Charges Payment Proof");
+                                  }}
+                                  title="View Extra Proof"
+                                >
+                                  <img src={b.paymentProofExtra} alt="Extra" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <Icon name="MagnifyingGlassPlusIcon" size={16} className="text-white" />
+                                  </div>
+                                  <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] text-center py-0.5">Extra</div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {b.notes && <div className="mt-3 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">{b.notes}</div>}
                       </div>
                     ))}
-                  </div>
-                  <div className="border-t border-gray-100 pt-4">
-                    <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Financial Summary</div>
-                    <div className="flex flex-wrap gap-4 text-sm">
-                      <div><span className="text-gray-500">Base: </span><span className="font-semibold text-gray-900">£{b.baseAmount.toLocaleString()}</span></div>
-                      {b.extraCharges.length > 0 && (
-                        <div><span className="text-gray-500">Extras: </span><span className="font-semibold text-amber-700">+£{b.extraCharges.reduce((s, c) => s + c.amount, 0).toLocaleString()}</span></div>
-                      )}
-                      {b.discount && (
-                        <div><span className="text-gray-500">Discount: </span><span className="font-semibold text-red-600">-£{getDiscountAmount(b).toLocaleString()}</span></div>
-                      )}
-                      <div><span className="text-gray-500">Total: </span><span className="font-bold" style={{ color: '#C8860A' }}>£{getTotalAmount(b).toLocaleString()}</span></div>
-                      <div className="flex items-center gap-1"><Icon name="CheckCircleIcon" size={14} className="text-emerald-500" /><span className="text-emerald-700 font-medium text-xs">Fully Paid</span></div>
-                    </div>
-                  </div>
 
-                  {/* Payment proofs */}
-                  {(b.paymentProofDeposit || b.paymentProofFinal || b.paymentProofExtra) && (
-                    <div className="border-t border-gray-100 pt-4 mt-4">
-                      <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Payment Proofs</div>
-                      <div className="flex gap-3">
-                        {b.paymentProofDeposit && (
-                          <div
-                            className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group bg-gray-50 flex-shrink-0"
-                            onClick={() => {
-                              openImagePreview(b.paymentProofDeposit, "Deposit Payment Proof");
-                            }}
-                            title="View Deposit Proof"
-                          >
-                            <img src={b.paymentProofDeposit} alt="Deposit" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <Icon name="MagnifyingGlassPlusIcon" size={16} className="text-white" />
-                            </div>
-                            <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] text-center py-0.5">Deposit</div>
+                    {totalHistoryCount === 0 && (
+                      <div className="bg-white rounded-xl border border-gray-200 py-16 text-center">
+                        <Icon name="ArchiveBoxIcon" size={36} className="mx-auto mb-3 text-gray-300" />
+                        <p className="text-gray-400 text-sm">No completed bookings match your filter</p>
+                      </div>
+                    )}
+
+                    {totalHistoryCount > 0 && (
+                      <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-600">
+                        <div className="flex items-center gap-3">
+                          <span>
+                            Showing <span className="font-semibold text-gray-900">{startHistoryIdx + 1}</span> to{' '}
+                            <span className="font-semibold text-gray-900">{endHistoryIdx}</span> of{' '}
+                            <span className="font-semibold text-gray-900">{totalHistoryCount}</span> records
+                          </span>
+                          <div className="flex items-center gap-1.5 border-l border-gray-300 pl-3">
+                            <span className="text-gray-500">Rows per page:</span>
+                            <select
+                              value={historyPageSize}
+                              onChange={(e) => {
+                                setHistoryPageSize(Number(e.target.value));
+                                setHistoryPage(1);
+                              }}
+                              className="bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs font-semibold text-gray-800 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                            >
+                              <option value={10}>10</option>
+                              <option value={20}>20</option>
+                              <option value={50}>50</option>
+                              <option value={100}>100</option>
+                            </select>
                           </div>
-                        )}
-                        {b.paymentProofFinal && (
-                          <div
-                            className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group bg-gray-50 flex-shrink-0"
-                            onClick={() => {
-                              openImagePreview(b.paymentProofFinal, "Final Payment Proof");
-                            }}
-                            title="View Final Proof"
-                          >
-                            <img src={b.paymentProofFinal} alt="Final" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <Icon name="MagnifyingGlassPlusIcon" size={16} className="text-white" />
-                            </div>
-                            <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] text-center py-0.5">Final</div>
-                          </div>
-                        )}
-                        {b.paymentProofExtra && (
-                          <div
-                            className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 cursor-pointer shadow-sm group bg-gray-50 flex-shrink-0"
-                            onClick={() => {
-                              openImagePreview(b.paymentProofExtra, "Extra Charges Payment Proof");
-                            }}
-                            title="View Extra Proof"
-                          >
-                            <img src={b.paymentProofExtra} alt="Extra" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <Icon name="MagnifyingGlassPlusIcon" size={16} className="text-white" />
-                            </div>
-                            <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] text-center py-0.5">Extra</div>
+                        </div>
+
+                        {totalHistoryPages > 1 && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setHistoryPage(1)}
+                              disabled={currentHistoryPage === 1}
+                              className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                              title="First Page"
+                            >
+                              « First
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setHistoryPage(prev => Math.max(1, prev - 1))}
+                              disabled={currentHistoryPage === 1}
+                              className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                              title="Previous Page"
+                            >
+                              ‹ Prev
+                            </button>
+
+                            {getPaginationRange(currentHistoryPage, totalHistoryPages).map((p, idx) => (
+                              p === '...' ? (
+                                <span key={`ellipsis-hist-${idx}`} className="px-2 py-1 text-gray-400">...</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  key={p}
+                                  onClick={() => setHistoryPage(Number(p))}
+                                  className={`min-w-[28px] h-7 px-2 rounded-lg font-semibold text-xs transition-all ${
+                                    currentHistoryPage === p
+                                      ? 'text-white shadow-sm'
+                                      : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-700'
+                                  }`}
+                                  style={currentHistoryPage === p ? { background: 'linear-gradient(135deg, #C8860A, #F0A830)' } : {}}
+                                >
+                                  {p}
+                                </button>
+                              )
+                            ))}
+
+                            <button
+                              type="button"
+                              onClick={() => setHistoryPage(prev => Math.min(totalHistoryPages, prev + 1))}
+                              disabled={currentHistoryPage === totalHistoryPages}
+                              className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                              title="Next Page"
+                            >
+                              Next ›
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setHistoryPage(totalHistoryPages)}
+                              disabled={currentHistoryPage === totalHistoryPages}
+                              className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                              title="Last Page"
+                            >
+                              Last »
+                            </button>
                           </div>
                         )}
                       </div>
-                    </div>
-                  )}
-                  {b.notes && <div className="mt-3 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">{b.notes}</div>}
-                </div>
-              ))}
-              {historyBookings.length === 0 && (
-                <div className="bg-white rounded-xl border border-gray-200 py-16 text-center">
-                  <Icon name="ArchiveBoxIcon" size={36} className="mx-auto mb-3 text-gray-300" />
-                  <p className="text-gray-400 text-sm">No completed bookings yet</p>
-                </div>
-              )}
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -4345,12 +5214,140 @@ Once you have completed the transfer, please send us a screenshot of the payment
                 </div>
                 
                 {!trackingBookingId ? (
-                  <div className="space-y-6 animate-in fade-in duration-300">
+                  <div className="space-y-5 animate-in fade-in duration-300">
+                    {/* Tracker Filter Bar */}
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="text-xs font-bold text-gray-800 uppercase tracking-wide flex items-center gap-1.5">
+                          <Icon name="FunnelIcon" size={14} className="text-[#C8860A]" />
+                          <span>Filter Orders by Status, Event &amp; Date</span>
+                        </div>
+                        {(() => {
+                          const filtered = bookings.filter(b => {
+                            if (trackerStatusFilter !== 'all' && b.status !== trackerStatusFilter) return false;
+                            if (trackerEventFilter !== 'all' && b.eventType.toLowerCase() !== trackerEventFilter.toLowerCase()) return false;
+                            if (trackerDateFilter && !b.date.includes(trackerDateFilter)) return false;
+                            if (trackerSearch) {
+                              const q = trackerSearch.toLowerCase();
+                              return (
+                                (b.name || '').toLowerCase().includes(q) ||
+                                (b.email || '').toLowerCase().includes(q) ||
+                                (b.phone || '').toLowerCase().includes(q) ||
+                                (b.eventType || '').toLowerCase().includes(q) ||
+                                (b.id || '').toLowerCase().includes(q)
+                              );
+                            }
+                            return true;
+                          });
+
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadFilteredTrackerPDF(filtered)}
+                              className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-white shadow-sm flex items-center gap-1.5 transition-all hover:brightness-110 active:scale-95"
+                              style={{ background: 'linear-gradient(135deg, #C8860A, #E09812)' }}
+                              title="Download comprehensive PDF report of current filtered bookings"
+                            >
+                              <Icon name="DocumentArrowDownIcon" size={14} />
+                              <span>Download Filtered Tracker PDF ({filtered.length})</span>
+                            </button>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                        {/* Status Filter */}
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Status</label>
+                          <select
+                            value={trackerStatusFilter}
+                            onChange={(e) => setTrackerStatusFilter(e.target.value)}
+                            className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-2 text-xs font-medium text-gray-800 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                          >
+                            <option value="all">All Statuses ({bookings.length})</option>
+                            {STATUS_FLOW.map((s) => (
+                              <option key={s} value={s}>
+                                {STATUS_LABELS[s]} ({bookings.filter(b => b.status === s).length})
+                              </option>
+                            ))}
+                            <option value="cancelled">
+                              Cancelled ({bookings.filter(b => b.status === 'cancelled').length})
+                            </option>
+                          </select>
+                        </div>
+
+                        {/* Event Type Filter */}
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Event Type</label>
+                          <select
+                            value={trackerEventFilter}
+                            onChange={(e) => setTrackerEventFilter(e.target.value)}
+                            className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-2 text-xs font-medium text-gray-800 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                          >
+                            <option value="all">All Event Types</option>
+                            <option value="Wedding">Wedding</option>
+                            <option value="Birthday">Birthday</option>
+                            <option value="Corporate">Corporate</option>
+                            <option value="Anniversary">Anniversary</option>
+                            <option value="Reception">Reception</option>
+                            <option value="Mehndi">Mehndi / Sangeet</option>
+                            <option value="Dry Hire">Dry Hire</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+
+                        {/* Date Query Filter */}
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Event Date (YYYY-MM)</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 2026-10"
+                            value={trackerDateFilter}
+                            onChange={(e) => setTrackerDateFilter(e.target.value)}
+                            className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Active filter tags & reset */}
+                      {(trackerStatusFilter !== 'all' || trackerEventFilter !== 'all' || trackerDateFilter) && (
+                        <div className="flex items-center gap-2 pt-1 border-t border-gray-200 flex-wrap text-[11px]">
+                          <span className="text-gray-500 font-medium">Active filters:</span>
+                          {trackerStatusFilter !== 'all' && (
+                            <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold border border-amber-200">
+                              Status: {STATUS_LABELS[trackerStatusFilter as BookingStatus] || trackerStatusFilter}
+                            </span>
+                          )}
+                          {trackerEventFilter !== 'all' && (
+                            <span className="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-bold border border-indigo-200">
+                              Event: {trackerEventFilter}
+                            </span>
+                          )}
+                          {trackerDateFilter && (
+                            <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-bold border border-blue-200">
+                              Date: {trackerDateFilter}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTrackerStatusFilter('all');
+                              setTrackerEventFilter('all');
+                              setTrackerDateFilter('');
+                            }}
+                            className="text-xs text-rose-600 hover:text-rose-800 font-bold underline ml-auto"
+                          >
+                            Reset Filters
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="relative">
                       <Icon name="MagnifyingGlassIcon" size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input 
                         type="text"
-                        placeholder="Search orders by name, email, phone number, or event type..."
+                        placeholder="Search orders by customer name, email, phone, or order ID..."
                         className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C8860A] transition-shadow shadow-sm"
                         value={trackerSearch}
                         onChange={(e) => setTrackerSearch(e.target.value)}
@@ -4367,12 +5364,22 @@ Once you have completed the transfer, please send us a screenshot of the payment
 
                     <div className="bg-white border border-gray-100 shadow-sm rounded-xl overflow-hidden max-h-[600px] overflow-y-auto">
                       {(() => {
-                        const filtered = bookings.filter(b => 
-                          b.name.toLowerCase().includes(trackerSearch.toLowerCase()) || 
-                          b.email.toLowerCase().includes(trackerSearch.toLowerCase()) ||
-                          b.phone.toLowerCase().includes(trackerSearch.toLowerCase()) ||
-                          b.eventType.toLowerCase().includes(trackerSearch.toLowerCase())
-                        );
+                        const filtered = bookings.filter(b => {
+                          if (trackerStatusFilter !== 'all' && b.status !== trackerStatusFilter) return false;
+                          if (trackerEventFilter !== 'all' && b.eventType.toLowerCase() !== trackerEventFilter.toLowerCase()) return false;
+                          if (trackerDateFilter && !b.date.includes(trackerDateFilter)) return false;
+                          if (trackerSearch) {
+                            const q = trackerSearch.toLowerCase();
+                            return (
+                              (b.name || '').toLowerCase().includes(q) ||
+                              (b.email || '').toLowerCase().includes(q) ||
+                              (b.phone || '').toLowerCase().includes(q) ||
+                              (b.eventType || '').toLowerCase().includes(q) ||
+                              (b.id || '').toLowerCase().includes(q)
+                            );
+                          }
+                          return true;
+                        });
 
                         return filtered.length > 0 ? filtered.map(b => (
                           <div 
@@ -4388,11 +5395,27 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                 {b.name.charAt(0).toUpperCase()}
                               </div>
                               <div>
-                                <div className="font-semibold text-gray-900 text-sm group-hover:text-[#C8860A] transition-colors">{b.name}</div>
+                                <div className="font-semibold text-gray-900 text-sm group-hover:text-[#C8860A] transition-colors flex items-center gap-2">
+                                  <span>{b.name}</span>
+                                  <span className="text-[10px] text-gray-400 font-mono">#{b.id.slice(0, 8)}</span>
+                                </div>
                                 <div className="text-xs text-gray-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                                   <span className="flex items-center gap-1"><Icon name="EnvelopeIcon" size={12} /> {b.email}</span>
                                   <span className="hidden sm:inline text-gray-300">•</span>
                                   <span className="flex items-center gap-1"><Icon name="PhoneIcon" size={12} /> {b.phone}</span>
+                                </div>
+                                <div className="flex items-center gap-2 mt-1 text-[11px]">
+                                  <span className="text-gray-600 font-medium">£{getTotalAmount(b).toLocaleString()}</span>
+                                  {b.discount && (
+                                    <span className="text-red-600 font-bold bg-red-50 px-1.5 py-0.2 rounded border border-red-100">
+                                      -£{getDiscountAmount(b).toLocaleString()} off
+                                    </span>
+                                  )}
+                                  {getBookingHallCharge(b) && (
+                                    <span className="text-indigo-700 font-semibold bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-100">
+                                      🏛️ Hall included
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -4407,8 +5430,8 @@ Once you have completed the transfer, please send us a screenshot of the payment
                         )) : (
                           <div className="p-12 text-center text-gray-500">
                             <Icon name="InboxIcon" size={32} className="mx-auto mb-3 text-gray-300" />
-                            <div className="text-sm font-medium text-gray-900 mb-1">No orders found</div>
-                            <div className="text-xs text-gray-500">Try adjusting your search terms</div>
+                            <div className="text-sm font-medium text-gray-900 mb-1">No orders match your filters</div>
+                            <div className="text-xs text-gray-500">Try adjusting your filters or search keywords</div>
                           </div>
                         );
                       })()}
@@ -4419,17 +5442,36 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   if (!tb) return <div className="text-gray-500 italic p-4 bg-gray-50 rounded-lg text-center">Booking not found.</div>;
                   
                   const currentStepIdx = STATUS_FLOW.indexOf(tb.status);
+                  const discountAmt = getDiscountAmount(tb);
+                  const hallFee = getBookingHallCharge(tb);
+                  const isDepositPaid = tb.depositPaid;
+                  const isFinalPaid = tb.finalPaymentPaid;
+                  const grandTotal = getTotalAmount(tb);
+                  const balanceDue = isFinalPaid ? 0 : Math.max(0, grandTotal - (isDepositPaid ? tb.deposit : 0));
                   
                   return (
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      {/* Top Header Card */}
                       <div className="bg-gray-50 rounded-xl p-5 border border-gray-100 flex flex-wrap items-center justify-between gap-4 shadow-sm">
                         <div>
-                          <div className="font-bold text-gray-900 text-lg">{tb.name}</div>
+                          <div className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                            <span>{tb.name}</span>
+                            <span className="text-xs font-mono text-gray-400 font-normal">#{tb.id}</span>
+                          </div>
                           <div className="text-sm font-medium text-gray-500 mt-1 flex items-center gap-2">
-                            <Icon name="CalendarIcon" size={14} /> {tb.eventType} on {tb.date}
+                            <Icon name="CalendarIcon" size={14} /> {tb.eventType} on {tb.date} ({tb.time})
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadSingleBookingTrackerPDF(tb)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#C8860A] hover:bg-[#B37408] text-white flex items-center gap-1.5 shadow-2xs transition-colors"
+                            title="Download complete chronological history & audit trail as PDF"
+                          >
+                            <Icon name="DocumentArrowDownIcon" size={13} />
+                            <span>Download PDF</span>
+                          </button>
                           <button
                             onClick={() => handleGoBackStatus(tb.id)}
                             disabled={currentStepIdx === 0}
@@ -4449,6 +5491,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
                                 {i + 1}. {STATUS_LABELS[s]}
                               </option>
                             ))}
+                            <option value="cancelled">Cancelled</option>
                           </select>
                           <button
                             onClick={() => handleGoForwardStatus(tb.id)}
@@ -4475,6 +5518,155 @@ Once you have completed the transfer, please send us a screenshot of the payment
                             <Icon name="EyeIcon" size={13} />
                             Details
                           </button>
+                        </div>
+                      </div>
+
+                      {/* ─── DISCOUNT DETAILS CARD ─── */}
+                      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                        <div className="flex items-center justify-between border-b border-gray-100 pb-2 mb-3">
+                          <div className="flex items-center gap-2">
+                            <Icon name="TagIcon" size={16} className="text-red-500" />
+                            <span className="font-bold text-gray-900 text-xs uppercase tracking-wide">Discount Information</span>
+                          </div>
+                          {tb.discount ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-red-100 text-red-800 border border-red-200">
+                              Discount Granted
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600">
+                              No Discount
+                            </span>
+                          )}
+                        </div>
+
+                        {tb.discount ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                            <div className="bg-red-50/60 p-3 rounded-xl border border-red-100">
+                              <span className="text-gray-500 block text-[10px] uppercase font-semibold">Discount Applied</span>
+                              <span className="font-extrabold text-red-700 text-base">
+                                {tb.discount.type === 'percentage' ? `${tb.discount.value}% Off` : `£${tb.discount.value} Off`}
+                              </span>
+                              <span className="block text-[11px] text-red-600 font-bold mt-0.5">
+                                Total Saved: -£{discountAmt.toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 sm:col-span-2 flex flex-col justify-between">
+                              <div>
+                                <span className="text-gray-500 block text-[10px] uppercase font-semibold">Reason for Concession</span>
+                                <span className="font-medium text-gray-800 italic block mt-1">
+                                  "{tb.discount.reason}"
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-gray-500 mt-2 pt-2 border-t border-gray-200 flex justify-between">
+                                <span>Total Before Discount: £{(grandTotal + discountAmt).toLocaleString()}</span>
+                                <span className="font-bold text-gray-900">Final Total: £{grandTotal.toLocaleString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-500 italic bg-gray-50 p-3 rounded-lg border border-gray-100">
+                            Standard pricing applied with no special discounts or concessions granted.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ─── COMPLETE CHRONOLOGICAL LIFECYCLE & AUDIT TRAIL ─── */}
+                      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
+                        <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                          <div className="flex items-center gap-2">
+                            <Icon name="ClockIcon" size={18} className="text-[#C8860A]" />
+                            <span className="font-bold text-gray-900 text-sm">Complete Chronological Audit History</span>
+                          </div>
+                          <span className="text-[10px] text-gray-400">Lifecycle milestones</span>
+                        </div>
+
+                        <div className="space-y-3 text-xs">
+                          {/* 1. Enquiry */}
+                          <div className="flex items-start gap-3 p-2.5 rounded-lg bg-gray-50 border border-gray-100">
+                            <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5">1</div>
+                            <div className="flex-1">
+                              <div className="font-bold text-gray-900">Enquiry Received</div>
+                              <div className="text-gray-600 mt-0.5">
+                                Logged on <strong>{tb.enquiryDate || 'system entry'}</strong> for <strong>{tb.eventType}</strong> with <strong>{tb.guests}</strong> guests ({tb.adults ?? tb.guests} adults{tb.kids4to10 ? `, ${tb.kids4to10} kids` : ''}).
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 2. Menu & Dish Selection */}
+                          <div className="flex items-start gap-3 p-2.5 rounded-lg bg-gray-50 border border-gray-100">
+                            <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5">2</div>
+                            <div className="flex-1">
+                              <div className="font-bold text-gray-900">Menu &amp; Catering Selection</div>
+                              <div className="text-gray-600 mt-0.5">
+                                Assigned package: <strong>{tb.selectedMenu || tb.package}</strong>. Base catering rate: <strong>£{tb.baseAmount.toLocaleString()}</strong>.
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 3. Venue Hall Status */}
+                          <div className="flex items-start gap-3 p-2.5 rounded-lg bg-gray-50 border border-gray-100">
+                            <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-800 flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5">3</div>
+                            <div className="flex-1">
+                              <div className="font-bold text-gray-900">Venue Hall Hire Allocation</div>
+                              <div className="text-gray-600 mt-0.5">
+                                {hallFee ? (
+                                  <span>Explicitly added: <strong>{hallFee.label} (+£{hallFee.amount.toLocaleString()})</strong>.</span>
+                                ) : (
+                                  <span>No venue hall fee applied (£0 / offsite catering). Default dry hire was unselected.</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 4. Advance Deposit */}
+                          <div className="flex items-start gap-3 p-2.5 rounded-lg bg-gray-50 border border-gray-100">
+                            <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5">4</div>
+                            <div className="flex-1">
+                              <div className="font-bold text-gray-900">Advance Deposit Status</div>
+                              <div className="text-gray-600 mt-0.5">
+                                {isDepositPaid ? (
+                                  <span className="text-emerald-800 font-semibold">
+                                    ✓ Advance deposit of £{tb.deposit.toLocaleString()} confirmed received via {tb.paymentMethodDeposit || 'Bank Transfer'}.
+                                  </span>
+                                ) : (
+                                  <span className="text-amber-800 font-semibold">
+                                    Advance deposit of £{tb.deposit.toLocaleString()} pending payment.
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 5. Cancellation record if cancelled */}
+                          {tb.status === 'cancelled' && (
+                            <div className="flex items-start gap-3 p-3 rounded-lg bg-rose-50 border border-rose-200">
+                              <div className="w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5">✕</div>
+                              <div className="flex-1 text-rose-950">
+                                <div className="font-bold text-rose-900">Order Cancelled</div>
+                                <div className="mt-1">
+                                  • Reason: <strong>{tb.cancellationDetails?.reason || 'Client request'}</strong><br/>
+                                  • Advance Paid: <strong>£{(tb.cancellationDetails?.advancePaid ?? tb.deposit).toLocaleString()}</strong><br/>
+                                  {tb.cancellationDetails?.cancelledAt && (
+                                    <span>• Cancelled On: {new Date(tb.cancellationDetails.cancelledAt).toLocaleString('en-GB')}<br/></span>
+                                  )}
+                                  {tb.cancellationDetails?.notes && (
+                                    <span>• Notes: <em>"{tb.cancellationDetails.notes}"</em></span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 6. Settlement */}
+                          <div className="flex items-start gap-3 p-2.5 rounded-lg bg-gray-50 border border-gray-100">
+                            <div className="w-6 h-6 rounded-full bg-teal-100 text-teal-800 flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5">5</div>
+                            <div className="flex-1">
+                              <div className="font-bold text-gray-900">Final Settlement &amp; Balance</div>
+                              <div className="text-gray-600 mt-0.5">
+                                Total order value: <strong>£{grandTotal.toLocaleString()}</strong>. Balance outstanding: <strong className={balanceDue === 0 ? 'text-emerald-700' : 'text-amber-700'}>{balanceDue === 0 ? '£0 (Cleared in full)' : `£${balanceDue.toLocaleString()}`}</strong>.
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                       
@@ -4671,6 +5863,64 @@ Once you have completed the transfer, please send us a screenshot of the payment
             </div>
 
             <div className="flex-1 overflow-auto p-5 space-y-5">
+              {/* Cancellation Status Banner (When order is cancelled) */}
+              {selectedBooking.status === 'cancelled' && (
+                <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-4 shadow-sm space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 text-rose-900 font-bold text-sm">
+                      <Icon name="XCircleIcon" size={20} className="text-rose-600" />
+                      <span>This Order is Cancelled</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRestoreBooking(selectedBooking.id)}
+                      className="text-[11px] font-bold text-gray-700 hover:text-gray-900 bg-white hover:bg-gray-100 border border-gray-300 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
+                      title="Reopen and restore this booking"
+                    >
+                      <Icon name="ArrowPathIcon" size={12} />
+                      <span>Restore Order</span>
+                    </button>
+                  </div>
+
+                  <div className="bg-white rounded-xl p-3 border border-rose-100 space-y-1.5 text-xs text-rose-950">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 font-medium">Reason for Cancellation:</span>
+                      <span className="font-bold text-rose-900">{selectedBooking.cancellationDetails?.reason || 'Cancelled by client request'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 font-medium">Advance Amount Paid:</span>
+                      <span className="font-bold text-gray-800">
+                        {selectedBooking.cancellationDetails?.advancePaid || selectedBooking.deposit > 0
+                          ? `£${(selectedBooking.cancellationDetails?.advancePaid ?? selectedBooking.deposit).toLocaleString()} (${selectedBooking.cancellationDetails?.depositMethod || selectedBooking.paymentMethodDeposit || 'Paid'})`
+                          : '£0 / No advance received'}
+                      </span>
+                    </div>
+                    {selectedBooking.cancellationDetails?.cancelledAt && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 font-medium">Cancelled On:</span>
+                        <span className="text-gray-700">{new Date(selectedBooking.cancellationDetails.cancelledAt).toLocaleString('en-GB')}</span>
+                      </div>
+                    )}
+                    {selectedBooking.cancellationDetails?.notes && (
+                      <div className="border-t border-rose-50 pt-1 mt-1 text-[11px] text-gray-600 italic">
+                        "{selectedBooking.cancellationDetails.notes}"
+                      </div>
+                    )}
+                  </div>
+
+                  <a
+                    href={buildWhatsAppLink(selectedBooking.phone, buildCancellationWhatsAppText(selectedBooking))}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded-xl text-white shadow-2xs transition-colors hover:bg-emerald-600"
+                    style={{ background: '#25D366' }}
+                  >
+                    <Icon name="ChatBubbleLeftRightIcon" size={14} />
+                    <span>Send Cancellation Notice via WhatsApp</span>
+                  </a>
+                </div>
+              )}
+
               {/* 3 PDFs System Card */}
               <div className="bg-gradient-to-br from-amber-50/70 via-white to-gray-50 rounded-2xl p-4 border border-amber-200/80 shadow-xs space-y-3">
                 <div className="flex items-center justify-between">
@@ -6184,14 +7434,49 @@ Once you have completed the transfer, please send us a screenshot of the payment
                     );
                   })()}
 
-                  {/* Venue Hall Charge based on date */}
+                  {/* Venue Hall Hire (Not added by default - Select Add / Remove Option) */}
                   {(() => {
-                    const hallCharge = getVenueHallCharge(selectedBooking.date, selectedBooking.time);
-                    if (!hallCharge) return null;
+                    const hallFee = getBookingHallCharge(selectedBooking);
                     return (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">🏛️ {hallCharge.label}</span>
-                        <span className="font-semibold text-indigo-700">£{hallCharge.amount.toLocaleString()}</span>
+                      <div className="bg-white rounded-lg p-3 border border-indigo-100 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-900">
+                            <span>🏛️ Venue Hall Hire</span>
+                            <span className="text-[10px] font-normal text-gray-500">(Optional add-on)</span>
+                          </div>
+                          {hallFee ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveHallChargeFromBooking(selectedBooking)}
+                              className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-0.5 rounded transition-colors"
+                              title="Remove hall charge from this booking"
+                            >
+                              ✕ Remove Hall Fee
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setShowAddHallModal(true)}
+                              className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded transition-colors"
+                              title="Add standard or custom venue hall fee"
+                            >
+                              + Add Hall Fee
+                            </button>
+                          )}
+                        </div>
+                        {hallFee ? (
+                          <div className="flex justify-between items-center text-xs text-gray-700 pt-1 border-t border-indigo-50">
+                            <div>
+                              <span className="font-semibold text-indigo-950">{hallFee.label}</span>
+                              {hallFee.reason && <div className="text-[10px] text-gray-500 italic">{hallFee.reason}</div>}
+                            </div>
+                            <span className="font-bold text-indigo-700">£{hallFee.amount.toLocaleString()}</span>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-gray-500 italic">
+                            No hall charge applied (£0). Not automatically added for all bookings.
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
@@ -6707,6 +7992,21 @@ Once you have completed the transfer, please send us a screenshot of the payment
                   </button>
                 </div>
               )}
+
+              {/* Cancellation button in Drawer Action Footer */}
+              {selectedBooking.status !== 'cancelled' && (
+                <div className="pt-2 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCancellationModal(selectedBooking)}
+                    className="w-full py-2.5 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                    title="Cancel this booking or order"
+                  >
+                    <Icon name="XCircleIcon" size={15} />
+                    <span>Cancel This Order</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -6828,6 +8128,363 @@ Once you have completed the transfer, please send us a screenshot of the payment
             >
               OK
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── ORDER CANCELLATION MODAL (MANUAL & WEBSITE BOOKING ORDERS) ─── */}
+      {cancellationModalBooking && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-200 overflow-hidden flex flex-col my-auto max-h-[90vh]">
+            {cancellationModalBooking.status === 'cancelled' ? (
+              /* Already Cancelled: View Audit & Options */
+              <>
+                <div className="bg-gradient-to-r from-rose-900 via-rose-800 to-rose-900 text-white p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-rose-200">
+                      <Icon name="XCircleIcon" size={24} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-base leading-tight">Cancelled Booking Record</h3>
+                      <p className="text-xs text-rose-200 mt-0.5">Order #{cancellationModalBooking.id.slice(0, 10)} · {cancellationModalBooking.name}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setCancellationModalBooking(null)}
+                    className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+                  >
+                    <Icon name="XMarkIcon" size={20} />
+                  </button>
+                </div>
+
+                <div className="p-5 overflow-y-auto space-y-4 text-xs">
+                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 space-y-2.5">
+                    <div className="font-bold text-rose-900 text-sm flex items-center gap-2">
+                      <Icon name="ExclamationTriangleIcon" size={16} className="text-rose-600" />
+                      This booking was cancelled
+                    </div>
+                    <div className="space-y-1.5 text-gray-700">
+                      {cancellationModalBooking.cancellationDetails?.cancelledAt && (
+                        <div><strong className="text-gray-900">Cancelled On:</strong> {new Date(cancellationModalBooking.cancellationDetails.cancelledAt).toLocaleString('en-GB')}</div>
+                      )}
+                      <div><strong className="text-gray-900">Cancelled By:</strong> {cancellationModalBooking.cancellationDetails?.cancelledBy || 'Administrator'}</div>
+                      <div><strong className="text-gray-900">Reason:</strong> {cancellationModalBooking.cancellationDetails?.reason || 'Client requested cancellation'}</div>
+                      <div>
+                        <strong className="text-gray-900">Advance Amount Paid:</strong>{' '}
+                        {cancellationModalBooking.cancellationDetails?.advancePaid && cancellationModalBooking.cancellationDetails.advancePaid > 0
+                          ? `£${cancellationModalBooking.cancellationDetails.advancePaid.toLocaleString()} (${cancellationModalBooking.cancellationDetails.depositMethod || 'Received'})`
+                          : '£0 (No advance paid)'}
+                      </div>
+                      {cancellationModalBooking.cancellationDetails?.notes && (
+                        <div><strong className="text-gray-900">Remarks:</strong> {cancellationModalBooking.cancellationDetails.notes}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 grid grid-cols-2 gap-2 text-gray-700">
+                    <div>
+                      <span className="text-gray-400 block text-[10px] uppercase font-bold">Event & Date</span>
+                      <span className="font-bold text-gray-900 text-xs">{cancellationModalBooking.eventType}</span>
+                      <span className="block text-[11px] text-gray-500">{cancellationModalBooking.date} ({cancellationModalBooking.time})</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 block text-[10px] uppercase font-bold">Guests & Package</span>
+                      <span className="font-bold text-gray-900 text-xs">{cancellationModalBooking.adults ?? cancellationModalBooking.guests} Guests</span>
+                      <span className="block text-[11px] text-gray-500">{cancellationModalBooking.selectedMenu || cancellationModalBooking.package}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between gap-3">
+                  <a
+                    href={buildWhatsAppLink(cancellationModalBooking.phone, buildCancellationWhatsAppText(cancellationModalBooking))}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white shadow-2xs hover:brightness-105"
+                    style={{ background: '#25D366' }}
+                  >
+                    <Icon name="ChatBubbleLeftRightIcon" size={14} />
+                    <span>Send Cancellation WhatsApp</span>
+                  </a>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const bId = cancellationModalBooking.id;
+                        setCancellationModalBooking(null);
+                        handleRestoreBooking(bId);
+                      }}
+                      className="px-3 py-2 rounded-xl text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors"
+                    >
+                      Restore Booking
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCancellationModalBooking(null)}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-700 bg-white hover:bg-gray-100 border border-gray-300 transition-colors"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* Active Booking: Professional Centered Confirmation Dialog */
+              <>
+                {/* Header */}
+                <div className="p-6 pb-4 border-b border-gray-100 flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 flex-shrink-0">
+                    <Icon name="ExclamationTriangleIcon" size={24} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-base text-gray-900 leading-tight">Confirm Booking Cancellation</h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Are you sure you want to cancel the booking for <strong className="text-gray-900">{cancellationModalBooking.name}</strong>?
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setCancellationModalBooking(null)}
+                    className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <Icon name="XMarkIcon" size={18} />
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div className="p-6 py-4 overflow-y-auto space-y-4 text-xs">
+                  {/* Order summary card */}
+                  <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 grid grid-cols-2 gap-2 text-gray-700">
+                    <div>
+                      <span className="text-gray-400 block text-[10px] uppercase font-bold">Event & Date</span>
+                      <span className="font-bold text-gray-900 text-xs">{cancellationModalBooking.eventType}</span>
+                      <span className="block text-[11px] text-gray-500">{cancellationModalBooking.date} ({cancellationModalBooking.time})</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 block text-[10px] uppercase font-bold">Guests & Package</span>
+                      <span className="font-bold text-gray-900 text-xs">{cancellationModalBooking.adults ?? cancellationModalBooking.guests} Guests</span>
+                      <span className="block text-[11px] text-gray-500">{cancellationModalBooking.selectedMenu || cancellationModalBooking.package}</span>
+                    </div>
+                  </div>
+
+                  {/* Advance Paid Information Section */}
+                  <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-amber-950 flex items-center gap-1.5 text-xs">
+                        <Icon name="BanknotesIcon" size={15} className="text-amber-700" />
+                        Advance / Deposit Amount Details
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                        cancellationModalBooking.depositPaid && cancellationModalBooking.deposit > 0
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-gray-100 text-gray-600 border border-gray-200'
+                      }`}>
+                        {cancellationModalBooking.depositPaid && cancellationModalBooking.deposit > 0 ? '✓ Advance Received' : 'No Advance Paid'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-amber-200/60 text-xs">
+                      <span className="text-amber-900 font-medium">Advance Amount Paid:</span>
+                      <span className="text-base font-extrabold text-amber-950">
+                        {cancellationModalBooking.depositPaid && cancellationModalBooking.deposit > 0
+                          ? `£${cancellationModalBooking.deposit.toLocaleString()}`
+                          : '£0'}
+                      </span>
+                    </div>
+
+                    {cancellationModalBooking.depositPaid && (
+                      <div className="text-[11px] text-amber-800 space-y-0.5">
+                        <div>• Payment Method: <strong>{cancellationModalBooking.paymentMethodDeposit || 'Bank Transfer'}</strong></div>
+                        {cancellationModalBooking.paymentProofDeposit && (
+                          <div className="pt-0.5">
+                            <button
+                              type="button"
+                              onClick={() => openImagePreview(cancellationModalBooking.paymentProofDeposit, 'Advance Payment Proof')}
+                              className="text-[#C8860A] underline font-bold hover:text-amber-800 inline-flex items-center gap-1"
+                            >
+                              <Icon name="PhotoIcon" size={12} /> View advance payment screenshot
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Cancellation Reason Selection */}
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-gray-800 text-xs">
+                      Reason for Cancellation <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={cancellationReason}
+                      onChange={(e) => setCancellationReason(e.target.value)}
+                      className="w-full border border-gray-300 rounded-xl p-2.5 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium"
+                    >
+                      <option value="Client requested cancellation">Client requested cancellation</option>
+                      <option value="Change of event plans / personal reasons">Change of event plans / personal reasons</option>
+                      <option value="Event postponed indefinitely">Event postponed indefinitely</option>
+                      <option value="Budget / Financial constraints">Budget / Financial constraints</option>
+                      <option value="Scheduling / Venue capacity conflict">Scheduling / Venue capacity conflict</option>
+                      <option value="Medical / Emergency circumstances">Medical / Emergency circumstances</option>
+                      <option value="Other">Other (Specify custom reason)</option>
+                    </select>
+
+                    {cancellationReason === 'Other' && (
+                      <input
+                        type="text"
+                        value={cancellationCustomReason}
+                        onChange={(e) => setCancellationCustomReason(e.target.value)}
+                        placeholder="Enter specific cancellation reason..."
+                        className="w-full mt-2 border border-rose-300 rounded-xl p-2.5 text-xs text-gray-900 bg-rose-50/30 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    )}
+                  </div>
+
+                  {/* Cancellation Remarks / Notes */}
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-gray-800 text-xs">
+                      Remarks / Internal Cancellation Notes (Optional)
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={cancellationNotes}
+                      onChange={(e) => setCancellationNotes(e.target.value)}
+                      placeholder="Add any context, communication notes, or confirmation details..."
+                      className="w-full border border-gray-300 rounded-xl p-2.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Modal Actions */}
+                <div className="p-4 px-6 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCancellationModalBooking(null)}
+                    disabled={isSubmittingCancellation}
+                    className="px-4 py-2.5 rounded-xl text-xs font-semibold text-gray-700 bg-white hover:bg-gray-100 border border-gray-300 transition-colors"
+                  >
+                    Keep Booking
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmCancellation}
+                    disabled={isSubmittingCancellation}
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all shadow-md flex items-center gap-2 disabled:opacity-50 active:scale-95"
+                  >
+                    {isSubmittingCancellation ? (
+                      <>
+                        <Icon name="ArrowPathIcon" size={14} className="animate-spin" />
+                        <span>Cancelling...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Icon name="XCircleIcon" size={14} />
+                        <span>Yes, Confirm Cancellation</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── ADD VENUE HALL CHARGE MODAL (DRAWER OPTIONAL ADD-ON) ─── */}
+      {showAddHallModal && selectedBooking && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-gradient-to-r from-indigo-900 to-indigo-800 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Icon name="BuildingOffice2Icon" size={20} className="text-indigo-200" />
+                <h3 className="font-bold text-sm">Add Venue Hall Hire Fee</h3>
+              </div>
+              <button
+                onClick={() => setShowAddHallModal(false)}
+                className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10"
+              >
+                <Icon name="XMarkIcon" size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              <p className="text-gray-500 leading-relaxed">
+                Choose a standard hall rate or specify a custom bespoke hall hire charge for Booking #{selectedBooking.id}.
+              </p>
+
+              {/* Standard Hall Charge */}
+              {(() => {
+                const std = getVenueHallCharge(selectedBooking.date, selectedBooking.time);
+                return (
+                  <div className="bg-indigo-50/60 border border-indigo-200 rounded-xl p-3 flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-indigo-950 block">{std ? std.label : 'Standard Banquet Hall Hire'}</span>
+                      <span className="text-[11px] text-gray-500">Based on event date: {selectedBooking.date}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-indigo-700 text-sm">£{std ? std.amount : 250}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleApplyHallChargeToBooking(selectedBooking, std || { label: 'Standard Banquet Hall Hire', amount: 250 })}
+                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Custom Hall Charge */}
+              <div className="border border-gray-200 rounded-xl p-3.5 space-y-3 bg-gray-50/50">
+                <div className="font-bold text-gray-800">Or Apply Custom / Bespoke Hall Fee</div>
+                <div>
+                  <label className="text-gray-500 font-semibold block mb-1">Hall Label / Description</label>
+                  <input
+                    type="text"
+                    value={customHallLabel}
+                    onChange={(e) => setCustomHallLabel(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg p-2 text-xs bg-white"
+                    placeholder="e.g. Bespoke Hall Hire Fee"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-500 font-semibold block mb-1">Fee Amount (£)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={customHallAmount}
+                    onChange={(e) => setCustomHallAmount(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg p-2 text-xs bg-white font-bold"
+                    placeholder="300"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-500 font-semibold block mb-1">Reason / Notes (Optional)</label>
+                  <input
+                    type="text"
+                    value={customHallReason}
+                    onChange={(e) => setCustomHallReason(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg p-2 text-xs bg-white"
+                    placeholder="e.g. Agreed weekend discount"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const parsed = parseFloat(customHallAmount) || 0;
+                    handleApplyHallChargeToBooking(selectedBooking, {
+                      label: customHallLabel.trim() || 'Custom Venue Hall Hire',
+                      amount: parsed,
+                      isCustom: true,
+                      reason: customHallReason.trim(),
+                    });
+                  }}
+                  className="w-full py-2 bg-gray-900 hover:bg-black text-white font-bold rounded-xl transition-colors"
+                >
+                  Apply Bespoke Hall Fee
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
