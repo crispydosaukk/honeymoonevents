@@ -433,6 +433,35 @@ export default function ManualBookingForm({
         );
       }
     }
+
+    if (editingBooking.venueHallCharge) {
+      const vhc = editingBooking.venueHallCharge;
+      setSelectedHallOption({
+        label: vhc.label || 'Venue Hall Hire',
+        amount: Number(vhc.amount) || 0,
+        defaultAmount: Number(vhc.defaultAmount || vhc.amount) || 0,
+        isCustomAmount: !!vhc.isCustom,
+        reason: vhc.reason || '',
+      });
+      if (vhc.isCustom) {
+        setShowHallPriceEditor(true);
+      }
+    } else if (Array.isArray(editingBooking.extraCharges)) {
+      const hallExtra = editingBooking.extraCharges.find((e: any) =>
+        e.label?.toLowerCase().includes('hall hire') ||
+        e.label?.toLowerCase().includes('dry hire') ||
+        e.label?.toLowerCase().includes('venue hire')
+      );
+      if (hallExtra) {
+        setSelectedHallOption({
+          label: hallExtra.label,
+          amount: Number(hallExtra.amount) || 0,
+          defaultAmount: Number(hallExtra.amount) || 0,
+          isCustomAmount: false,
+          reason: '',
+        });
+      }
+    }
   }, [editingBooking, banquetPackages]);
 
   // Current package object (null if no package selected)
@@ -455,6 +484,113 @@ export default function ManualBookingForm({
       setPhoneError('');
     }
   };
+
+  // ── Venue Hire Dropdown Key Resolution & Handlers (Step 1) ──
+  const venueHireSelectValue = useMemo(() => {
+    if (!selectedHallOption) return '';
+    if (
+      selectedHallOption.label === 'Custom Venue Hire' ||
+      (selectedHallOption.isCustomAmount && selectedHallOption.defaultAmount === 0)
+    ) {
+      return 'custom';
+    }
+    const hallIdx = venueHallCharges.findIndex(
+      (h) =>
+        selectedHallOption.label === h.day ||
+        selectedHallOption.label === `${h.day} (${h.note})` ||
+        selectedHallOption.label.startsWith(h.day)
+    );
+    if (hallIdx !== -1) return `hall_${hallIdx}`;
+
+    const dryIdx = dryHirePrices.findIndex(
+      (dh) =>
+        selectedHallOption.label.includes(dh.day) && selectedHallOption.label.includes(dh.session)
+    );
+    if (dryIdx !== -1) return `dry_${dryIdx}`;
+
+    return 'custom';
+  }, [selectedHallOption, venueHallCharges, dryHirePrices]);
+
+  const handleVenueHireSelectChange = (val: string) => {
+    if (!val) {
+      setSelectedHallOption(null);
+      setShowHallPriceEditor(false);
+      return;
+    }
+    if (val === 'custom') {
+      setSelectedHallOption({
+        label:
+          selectedHallOption?.isCustomAmount && selectedHallOption.label && selectedHallOption.label !== 'Custom Venue Hire'
+            ? selectedHallOption.label
+            : 'Custom Venue Hire',
+        amount: selectedHallOption?.isCustomAmount ? Number(selectedHallOption.amount || 0) : 0,
+        defaultAmount: 0,
+        isCustomAmount: true,
+        reason: selectedHallOption?.reason || '',
+      });
+      setShowHallPriceEditor(true);
+      return;
+    }
+    if (val.startsWith('hall_')) {
+      const idx = parseInt(val.replace('hall_', ''), 10);
+      const hall = venueHallCharges[idx];
+      if (hall) {
+        const priceMatch = hall.charge.match(/£(\d+)/);
+        const defaultAmount = priceMatch ? parseInt(priceMatch[1]) : 250;
+        const label = hall.note ? `${hall.day} (${hall.note})` : hall.day;
+        setSelectedHallOption({
+          label,
+          amount: defaultAmount,
+          defaultAmount,
+          isCustomAmount: false,
+          reason: '',
+        });
+        setShowHallPriceEditor(false);
+      }
+      return;
+    }
+    if (val.startsWith('dry_')) {
+      const idx = parseInt(val.replace('dry_', ''), 10);
+      const dh = dryHirePrices[idx];
+      if (dh) {
+        const label = `Dry Hire: ${dh.day} (${dh.session})`;
+        setSelectedHallOption({
+          label,
+          amount: dh.price,
+          defaultAmount: dh.price,
+          isCustomAmount: false,
+          reason: '',
+        });
+        setShowHallPriceEditor(false);
+      }
+      return;
+    }
+  };
+
+  // Recommended venue hall rate based on selected date & session
+  const recommendedHallIdx = useMemo(() => {
+    if (!customerDetails.date) return null;
+    const d = new Date(customerDetails.date);
+    if (isNaN(d.getTime())) return null;
+    const day = d.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    const sessionLower = (customerDetails.timeSession || '').toLowerCase();
+    const customTimeLower = (customerDetails.customTime || '').toLowerCase();
+    const isDinner =
+      sessionLower.includes('dinner') ||
+      sessionLower.includes('6:00') ||
+      sessionLower.includes('evening') ||
+      customTimeLower.includes('dinner') ||
+      customTimeLower.includes('evening');
+
+    if (day >= 1 && day <= 4) {
+      return 0; // Mon–Thu (£100)
+    } else if (day === 5 || day === 0) {
+      return 1; // Fri & Sun (£250)
+    } else if (day === 6) {
+      return isDinner ? 3 : 2; // Sat Dinner (£500) or Sat Lunch (£250)
+    }
+    return null;
+  }, [customerDetails.date, customerDetails.timeSession, customerDetails.customTime]);
 
   // Total guests
   const totalGuests = Number(customerDetails.adults || 0) + Number(customerDetails.kids4to10 || 0) + Number(customerDetails.kidsUnder4 || 0);
@@ -1295,7 +1431,8 @@ export default function ManualBookingForm({
             <span className="text-xs text-gray-400">* Required fields</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {/* Customer Details Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {/* Customer Name */}
             <div>
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
@@ -1347,7 +1484,10 @@ export default function ManualBookingForm({
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
               />
             </div>
+          </div>
 
+          {/* Event Details Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {/* Event Type */}
             <div>
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
@@ -1429,8 +1569,8 @@ export default function ManualBookingForm({
             </div>
           </div>
 
-          {/* ── Package Selection (in Step 1) ── */}
-          <div className="bg-amber-50/40 border border-amber-200/60 rounded-xl p-5 space-y-3.5">
+          {/* ── Package Selection & Venue Hire (in Step 1) ── */}
+          <div className="bg-amber-50/40 border border-amber-200/60 rounded-xl p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/50 pb-3">
               <div>
                 <span className="text-xs font-bold text-amber-900 uppercase tracking-wide flex items-center gap-1.5">
@@ -1457,7 +1597,7 @@ export default function ManualBookingForm({
             </div>
 
             {/* Package Cards Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
               {allBanquetPackages.map((pkg) => {
                 const isSelected = selectedPackageId === pkg.id;
                 return (
@@ -1537,6 +1677,219 @@ export default function ManualBookingForm({
                   </div>
                 );
               })}
+            </div>
+
+            {/* ── Venue Hire & Hall Charges inside Packages Place ── */}
+            <div className="pt-3 border-t border-amber-200/60 bg-white p-4 rounded-xl border border-amber-200/90 shadow-2xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-2.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-[#C8860A] flex items-center justify-center font-bold flex-shrink-0">
+                    <Icon name="BuildingOfficeIcon" size={18} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">
+                        Venue Hall Hire &amp; Dry Hire
+                      </span>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                        Optional / £0 by Default
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      Select a standard banquet hall rate, dry hire session, or add a bespoke fee.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  {selectedHallOption && (
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-950 border border-amber-300 flex items-center gap-1">
+                      <span>Applied: £{Number(selectedHallOption.amount || 0).toLocaleString()}</span>
+                      {selectedHallOption.isCustomAmount && selectedHallOption.defaultAmount > 0 && selectedHallOption.amount !== selectedHallOption.defaultAmount && (
+                        <span className="line-through text-gray-400 font-normal ml-1">
+                          £{selectedHallOption.defaultAmount.toLocaleString()}
+                        </span>
+                      )}
+                    </span>
+                  )}
+
+                  {selectedHallOption && (
+                    <button
+                      type="button"
+                      onClick={() => setShowHallPriceEditor(!showHallPriceEditor)}
+                      className="text-xs font-bold text-[#C8860A] bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-2xs transition-colors"
+                    >
+                      <Icon name="PencilSquareIcon" size={12} />
+                      <span>{showHallPriceEditor ? 'Close' : (selectedHallOption.isCustomAmount ? 'Custom Fee' : 'Edit Fee')}</span>
+                    </button>
+                  )}
+
+                  {selectedHallOption && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedHallOption(null);
+                        setShowHallPriceEditor(false);
+                      }}
+                      className="text-xs text-rose-600 hover:text-rose-700 hover:underline font-semibold px-1"
+                    >
+                      Remove (£0)
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Dropdown & Quick Status Display */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
+                <div className="lg:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                    Venue Hire Option:
+                  </label>
+                  <select
+                    value={venueHireSelectValue}
+                    onChange={(e) => handleVenueHireSelectChange(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+                  >
+                    <option value="">-- No Venue Hire (£0 / Offsite Catering / Included in Package) --</option>
+                    <optgroup label="🏛️ Standard Banquet Hall Hire">
+                      {venueHallCharges.map((hall, idx) => {
+                        const priceMatch = hall.charge.match(/£(\d+)/);
+                        const defaultAmount = priceMatch ? parseInt(priceMatch[1]) : 250;
+                        const isRecommended = recommendedHallIdx === idx;
+                        return (
+                          <option key={`hall_${idx}`} value={`hall_${idx}`}>
+                            {hall.day}{hall.note ? ` (${hall.note})` : ''} — £{defaultAmount}{isRecommended ? ' ⭐ (Matches Date)' : ''}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                    <optgroup label="🔑 Dry Hire Sessions (Hall-Only Hire)">
+                      {dryHirePrices.map((dh, idx) => (
+                        <option key={`dry_${idx}`} value={`dry_${idx}`}>
+                          Dry Hire: {dh.day} ({dh.session}) — £{dh.price.toLocaleString()}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <option value="custom">✏️ Custom Venue Hire Fee...</option>
+                  </select>
+                </div>
+
+                <div className="pt-0 lg:pt-6">
+                  {selectedHallOption ? (
+                    <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-300 text-xs text-amber-950 font-medium flex items-center justify-between">
+                      <div className="truncate mr-2">
+                        <span className="font-bold">{selectedHallOption.label}</span>
+                        {selectedHallOption.reason && (
+                          <div className="text-[10px] text-amber-800/80 truncate">
+                            Note: {selectedHallOption.reason}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-sm font-extrabold text-[#C8860A] whitespace-nowrap">
+                        +£{Number(selectedHallOption.amount || 0).toLocaleString()}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-500 flex items-center gap-2">
+                      <Icon name="CheckCircleIcon" size={16} className="text-emerald-600 flex-shrink-0" />
+                      <span>No hall fee applied (£0). Catering-only or included in package.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Inline Custom Rate / Override Drawer */}
+              {(venueHireSelectValue === 'custom' || (showHallPriceEditor && selectedHallOption)) && selectedHallOption && (
+                <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2.5 text-xs shadow-xs animate-fade-in">
+                  <div className="flex items-center justify-between border-b border-amber-200/60 pb-1.5">
+                    <span className="font-bold text-amber-950 flex items-center gap-1.5">
+                      <Icon name="PencilSquareIcon" size={13} className="text-[#C8860A]" />
+                      {venueHireSelectValue === 'custom' ? 'Custom Venue Hire Details' : `Override Fee: ${selectedHallOption.label}`}
+                    </span>
+                    {selectedHallOption.isCustomAmount && selectedHallOption.defaultAmount > 0 && venueHireSelectValue !== 'custom' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedHallOption({
+                            ...selectedHallOption,
+                            amount: selectedHallOption.defaultAmount,
+                            isCustomAmount: false,
+                            reason: '',
+                          });
+                        }}
+                        className="text-[10px] text-red-600 hover:underline font-semibold"
+                      >
+                        Reset to £{selectedHallOption.defaultAmount}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {venueHireSelectValue === 'custom' && (
+                      <div>
+                        <label className="block text-[10px] font-semibold text-amber-900 mb-1">
+                          Venue Hire Description *
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Bespoke Evening Hall Hire"
+                          value={selectedHallOption.label === 'Custom Venue Hire' ? '' : selectedHallOption.label}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSelectedHallOption({
+                              ...selectedHallOption,
+                              label: val.trim() ? val : 'Custom Venue Hire',
+                            });
+                          }}
+                          className="w-full border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs bg-white text-gray-900 font-medium focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-[10px] font-semibold text-amber-900 mb-1">
+                        Agreed Fee Amount (£) *
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold">£</span>
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder="0"
+                          value={selectedHallOption.amount === 0 ? '' : selectedHallOption.amount}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 0 : Math.max(0, parseFloat(e.target.value) || 0);
+                            setSelectedHallOption({
+                              ...selectedHallOption,
+                              amount: val,
+                              isCustomAmount: true,
+                            });
+                          }}
+                          className="w-full pl-6 pr-2.5 py-1.5 border border-amber-300 rounded-lg text-xs font-bold text-gray-900 bg-white focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className={venueHireSelectValue === 'custom' ? 'sm:col-span-2' : ''}>
+                      <label className="block text-[10px] font-semibold text-amber-900 mb-1">
+                        Reason / Notes (Optional):
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Special negotiated rate or client discount"
+                        value={selectedHallOption.reason || ''}
+                        onChange={(e) => {
+                          setSelectedHallOption({
+                            ...selectedHallOption,
+                            reason: e.target.value,
+                          });
+                        }}
+                        className="w-full border border-amber-200 rounded-lg px-2.5 py-1.5 text-[11px] bg-white focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
