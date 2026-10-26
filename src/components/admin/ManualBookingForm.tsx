@@ -337,11 +337,21 @@ export default function ManualBookingForm({
     const foundPkg = banquetPackages.find(
       (p) => p.name.toLowerCase() === (pkgName || '').toLowerCase()
     );
+    const hasFoodCharge = (Number(editingBooking.pricePerPerson) > 0) || (Number(editingBooking.baseAmount) > 0);
+    const isExplicitNoFoodPkg = ['hall hire only', 'venue hire only', 'no package', 'no food package', 'dry hire'].includes((pkgName || '').toLowerCase());
+
     if (foundPkg) {
       setSelectedPackageId(foundPkg.id);
-    } else if (pkgName) {
+    } else if (pkgName && !isExplicitNoFoodPkg && (hasFoodCharge || (pkgName.toLowerCase().includes('custom') && hasFoodCharge))) {
       setSelectedPackageId('custom');
-      setSelectedPackageCustomPrice(editingBooking.pricePerPerson || 35);
+      setSelectedPackageCustomPrice(
+        editingBooking.pricePerPerson !== undefined && editingBooking.pricePerPerson !== null
+          ? Number(editingBooking.pricePerPerson)
+          : (hasFoodCharge ? 35 : 0)
+      );
+    } else {
+      setSelectedPackageId('');
+      setSelectedPackageCustomPrice('');
     }
 
     if (editingBooking.priceOverrides) {
@@ -913,11 +923,11 @@ export default function ManualBookingForm({
       adults: Number(customerDetails.adults),
       kids4to10: Number(customerDetails.kids4to10),
       kidsUnder4: Number(customerDetails.kidsUnder4),
-      package: currentPackage?.name || 'Custom Package',
-      selectedMenu: currentPackage?.name || 'Custom Package',
-      pricePerPerson: effectivePackagePrice,
-      kidsPricePerPerson: effectiveKidsPrice,
-      kidsUnder4PricePerPerson: effectiveKidsUnder4Price,
+      package: currentPackage?.name || (selectedPackageId === 'custom' ? 'Custom Package' : (selectedHallOption ? 'Venue Hire Only' : 'No Food Package')),
+      selectedMenu: currentPackage?.name || (selectedPackageId === 'custom' ? 'Custom Package' : (selectedHallOption ? 'Venue Hire Only' : 'No Food Package')),
+      pricePerPerson: selectedPackageId ? effectivePackagePrice : 0,
+      kidsPricePerPerson: selectedPackageId ? effectiveKidsPrice : 0,
+      kidsUnder4PricePerPerson: selectedPackageId ? effectiveKidsUnder4Price : 0,
       baseAmount: foodBaseAmount,
       deposit: amountPaid,
       depositPaid: isDepositOnly || paymentChoice !== 'pending',
@@ -1121,11 +1131,11 @@ export default function ManualBookingForm({
         adults: Number(customerDetails.adults) || 0,
         kids4to10: Number(customerDetails.kids4to10) || 0,
         kidsUnder4: Number(customerDetails.kidsUnder4) || 0,
-        package: currentPackage?.name || 'Custom Package',
-        selectedMenu: currentPackage?.name || 'Custom Package',
-        pricePerPerson: effectivePackagePrice,
-        kidsPricePerPerson: effectiveKidsPrice,
-        kidsUnder4PricePerPerson: effectiveKidsUnder4Price,
+        package: currentPackage?.name || (selectedPackageId === 'custom' ? 'Custom Package' : (selectedHallOption ? 'Venue Hire Only' : 'No Food Package')),
+        selectedMenu: currentPackage?.name || (selectedPackageId === 'custom' ? 'Custom Package' : (selectedHallOption ? 'Venue Hire Only' : 'No Food Package')),
+        pricePerPerson: selectedPackageId ? effectivePackagePrice : 0,
+        kidsPricePerPerson: selectedPackageId ? effectiveKidsPrice : 0,
+        kidsUnder4PricePerPerson: selectedPackageId ? effectiveKidsUnder4Price : 0,
         baseAmount: foodBaseAmount,
         deposit: amountPaid,
         depositPaid: isDepositPaid,
@@ -3572,40 +3582,48 @@ export default function ManualBookingForm({
               <div className="text-xs space-y-1 text-gray-600 bg-gray-50/70 p-3 rounded-xl border border-gray-100">
                 <div className="font-bold text-gray-900">{customerDetails.name || 'Customer Name'}</div>
                 <div>📅 {customerDetails.date || 'Date not set'} · ⏰ {customerDetails.timeSession}</div>
-                <div>👥 {customerDetails.adults} Adults · {customerDetails.kids4to10} Kids · {customerDetails.kidsUnder4} Infants</div>
+                <div>👥 {customerDetails.adults} {Number(customerDetails.adults) === 1 ? 'Adult' : 'Adults'} · {customerDetails.kids4to10} Kids · {customerDetails.kidsUnder4} Infants</div>
               </div>
 
               {/* Package Details */}
               <div className="text-xs space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="font-medium text-gray-700">Package:</span>
-                  <span className="font-bold text-gray-900">{currentPackage?.name}</span>
-                </div>
-                <div className="flex justify-between items-center text-gray-500">
-                  <span>Adult Rate:</span>
-                  <span className="font-bold text-amber-900">
-                    £{effectivePackagePrice} / adult
-                    {packagePriceOverride !== null && (
-                      <span className="text-[10px] text-amber-700 font-semibold bg-amber-100 px-1.5 py-0.2 rounded ml-1">Custom</span>
-                    )}
+                  <span className="font-bold text-gray-900">
+                    {selectedPackageId === 'custom'
+                      ? 'Custom Package'
+                      : (currentPackage?.name || (selectedHallOption ? 'Venue Hire Only' : 'No Package Selected'))}
                   </span>
                 </div>
-                {Number(customerDetails.kids4to10) > 0 && (
+                {selectedPackageId ? (
+                  <div className="flex justify-between items-center text-gray-500">
+                    <span>Adult Rate:</span>
+                    <span className="font-bold text-amber-900">
+                      £{effectivePackagePrice} / adult
+                      {packagePriceOverride !== null && (
+                        <span className="text-[10px] text-amber-700 font-semibold bg-amber-100 px-1.5 py-0.2 rounded ml-1">Custom</span>
+                      )}
+                    </span>
+                  </div>
+                ) : null}
+                {Number(customerDetails.kids4to10) > 0 && selectedPackageId && (
                   <div className="flex justify-between items-center text-gray-500">
                     <span>Kids (4–10) Rate:</span>
                     <span className="font-semibold text-gray-800">£{effectiveKidsPrice} / kid</span>
                   </div>
                 )}
-                {Number(customerDetails.kidsUnder4) > 0 && (
+                {Number(customerDetails.kidsUnder4) > 0 && selectedPackageId && (
                   <div className="flex justify-between items-center text-gray-500">
                     <span>Infants (Under 4):</span>
                     <span className="font-semibold text-emerald-700">{effectiveKidsUnder4Price > 0 ? `£${effectiveKidsUnder4Price} / infant` : 'Free'}</span>
                   </div>
                 )}
-                <div className="flex justify-between items-center text-gray-500 pt-1 border-t border-gray-100">
-                  <span>Catering Subtotal:</span>
-                  <span className="font-semibold text-gray-900">£{foodBaseAmount.toLocaleString()}</span>
-                </div>
+                {selectedPackageId ? (
+                  <div className="flex justify-between items-center text-gray-500 pt-1 border-t border-gray-100">
+                    <span>Catering Subtotal:</span>
+                    <span className="font-semibold text-gray-900">£{foodBaseAmount.toLocaleString()}</span>
+                  </div>
+                ) : null}
 
                 {selectedHallOption && (
                   <div className="flex justify-between items-center text-amber-700 pt-1 border-t border-gray-100">
@@ -3645,7 +3663,7 @@ export default function ManualBookingForm({
                   {activePriceOverridesList.map((item, i) => (
                     <div key={i} className="flex justify-between items-start text-amber-900">
                       <span className="truncate max-w-[140px]">{item.title}:</span>
-                      <span className="font-bold">£{item.custom} <span className="line-through text-gray-400 font-normal text-[10px]">£{item.original}</span></span>
+                      <span className="font-bold">£{item.custom} {item.original !== item.custom && <span className="line-through text-gray-400 font-normal text-[10px]">£{item.original}</span>}</span>
                     </div>
                   ))}
                 </div>
@@ -3839,7 +3857,7 @@ export default function ManualBookingForm({
                         </div>
                       </div>
                       <div className="flex items-center gap-2 self-end sm:self-center">
-                        <span className="text-gray-400 line-through text-[11px]">£{item.original.toLocaleString()}</span>
+                        {item.original !== item.custom && <span className="text-gray-400 line-through text-[11px]">£{item.original.toLocaleString()}</span>}
                         <span className="font-extrabold text-[#C8860A] text-sm">£{item.custom.toLocaleString()}</span>
                       </div>
                     </div>
@@ -4383,12 +4401,14 @@ export default function ManualBookingForm({
 
               {/* Order breakdown */}
               <div className="text-xs space-y-2 text-gray-700">
-                <div className="flex justify-between">
-                  <span>
-                    Adult Catering ({customerDetails.adults} × £{effectivePackagePrice}):
-                  </span>
-                  <span className="font-semibold">£{adultFoodTotal.toLocaleString()}</span>
-                </div>
+                {selectedPackageId && adultFoodTotal > 0 && (
+                  <div className="flex justify-between">
+                    <span>
+                      Adult Catering ({customerDetails.adults} × £{effectivePackagePrice}):
+                    </span>
+                    <span className="font-semibold">£{adultFoodTotal.toLocaleString()}</span>
+                  </div>
+                )}
 
                 {Number(customerDetails.kids4to10) > 0 && (
                   <div className="flex justify-between text-gray-600">
@@ -4631,7 +4651,7 @@ export default function ManualBookingForm({
                 {activePriceOverridesList.map((item, idx) => (
                   <div key={idx} className="flex justify-between items-center text-[11px] py-1 border-b border-gray-100 last:border-0">
                     <span>
-                      <strong>{item.title}:</strong> £{item.custom} <span className="line-through text-gray-400">£{item.original}</span>
+                      <strong>{item.title}:</strong> £{item.custom} {item.original !== item.custom && <span className="line-through text-gray-400">£{item.original}</span>}
                       <span className="italic text-gray-500 ml-1.5 font-normal">("{item.reason}")</span>
                     </span>
                   </div>

@@ -3412,11 +3412,11 @@ Warm regards,
                                       </div>
                                     </div>
                                   </td>
-                                  <td className="px-4 py-3.5">
-                                    <div className="text-sm text-gray-700">{booking.eventType}</div>
+                                  <td className="px-4 py-3.5 max-w-[200px]">
+                                    <div className="text-sm font-medium text-gray-900 break-words">{booking.eventType}</div>
                                     <div className="text-xs text-gray-400">{booking.package}</div>
                                   </td>
-                                  <td className="px-4 py-3.5">
+                                  <td className="px-4 py-3.5 whitespace-nowrap">
                                     <div className="text-sm text-gray-700">{booking.date}</div>
                                     <div className="text-xs text-gray-400">{booking.time}</div>
                                   </td>
@@ -3424,7 +3424,7 @@ Warm regards,
                                   {/* Total Amount */}
                                   <td className="px-4 py-3.5">
                                     <div className="text-sm font-bold text-gray-900">£{total.toLocaleString()}</div>
-                                    <div className="text-[10px] text-gray-400">{booking.guests} Guests</div>
+                                    <div className="text-[10px] text-gray-400">{booking.guests} {booking.guests === 1 ? 'Guest' : 'Guests'}</div>
                                   </td>
 
                                   {/* Deposit Paid */}
