@@ -10,7 +10,15 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import AccessControl from '@/components/admin/AccessControl';
 import ManualBookingForm from '@/components/admin/ManualBookingForm';
 import ExtraChargesSettings, { ConfiguredExtraCharge, DEFAULT_CONFIGURED_CHARGES } from '@/components/admin/ExtraChargesSettings';
-import { generateChefMenuPDF, openChefWhatsApp } from '@/utils/chefMenuPDF';
+import { generateChefMenuPDF, downloadChefMenuPDF, openChefWhatsApp } from '@/utils/chefMenuPDF';
+import {
+  downloadInvoicePDFFile,
+  openInvoicePrintWindow,
+  shareInvoicePDFViaWhatsApp,
+  buildInvoiceWhatsAppMessage,
+  cleanPhoneNumber,
+  InvoiceBookingData,
+} from '@/utils/invoicePDF';
 import { getKidsPriceFromList } from '@/utils/kidsPricing';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -427,6 +435,12 @@ export default function AdminPage() {
   const [customHallLabel, setCustomHallLabel] = useState<string>('Bespoke Venue Hall Hire');
   const [customHallAmount, setCustomHallAmount] = useState<string>('300');
   const [customHallReason, setCustomHallReason] = useState<string>('');
+
+  // WhatsApp Invoice Delivery Modal States
+  const [whatsAppInvoiceBooking, setWhatsAppInvoiceBooking] = useState<Booking | null>(null);
+  const [whatsAppInvoiceType, setWhatsAppInvoiceType] = useState<'final' | 'deposit'>('final');
+  const [whatsAppCustomPhone, setWhatsAppCustomPhone] = useState<string>('');
+  const [isSharingWhatsApp, setIsSharingWhatsApp] = useState<boolean>(false);
 
   // Booking Tracker Filter States
   const [trackerStatusFilter, setTrackerStatusFilter] = useState<string>('all');
@@ -2337,413 +2351,98 @@ Warm regards,
       booking.paymentProofExtra = undefined;
       booking.status = 'deposit_confirmed';
     }
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
 
-    const extraChargesTotal = (booking.extraCharges || []).reduce((s, c) => s + c.amount, 0);
-    const adults = booking.adults ?? booking.guests;
-    const kids4to10 = booking.kids4to10 || 0;
-    const kidsUnder4 = booking.kidsUnder4 || 0;
     const pkgName = booking.selectedMenu || booking.package;
     const pkgObj = editableBanquetPackages.find(p => p.name === pkgName);
     const kidsPrice = booking.kidsPricePerPerson ?? (pkgObj?.kidsPrice || getKidsPrice(editableKidsPricing, pkgName));
-    const kidsUnder4Price = booking.kidsUnder4PricePerPerson ?? 0;
     const pricePerPerson = booking.pricePerPerson ?? (pkgObj?.pricePerPerson || 0);
     const hallCharge = (booking.extraCharges || []).some(e => e.label.toLowerCase().includes('hall hire') || e.label.toLowerCase().includes('dry hire')) ? null : getBookingHallCharge(booking);
-    const grandTotal = getTotalAmount(booking);
-    const discountAmount = getDiscountAmount(booking);
-    const finalPaymentPaidAmt = grandTotal - booking.deposit - extraChargesTotal;
-    const isDepositPaid = booking.depositPaid || !['new_enquiry', 'menu_sent', 'menu_selected', 'deposit_pending'].includes(booking.status);
-    const isExtraPaid = booking.status === 'completed' || !!booking.paymentProofExtra || booking.finalPaymentPaid;
-    
-    // Format dates
-    const formattedDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A';
-    const formattedEnquiryDate = booking.enquiryDate ? new Date(booking.enquiryDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A';
 
-    // Construct logo source (ensure it points to the absolute path of the domain)
-    const logoUrl = window.location.origin + '/assets/images/oie_gAxqzQFu0Ixw-1777831503416.png';
+    const invoiceData: InvoiceBookingData = {
+      ...booking,
+      pricePerPerson,
+      kidsPricePerPerson: kidsPrice,
+      venueHallCharge: hallCharge,
+    };
 
-    // Build the proof screenshots section
-    let screenshotsHTML = '';
-    if (booking.paymentProofDeposit || booking.paymentProofFinal || booking.paymentProofExtra) {
-      screenshotsHTML += `
-        <div class="section-title">Payment Verification Screenshots</div>
-        <div class="proof-container">
-      `;
-      if (booking.paymentProofDeposit) {
-        screenshotsHTML += `
-          <div class="proof-card">
-            <div class="proof-label">Deposit Payment Proof</div>
-            <img src="${booking.paymentProofDeposit}" alt="Deposit Proof" />
-          </div>
-        `;
-      }
-      if (booking.paymentProofFinal) {
-        screenshotsHTML += `
-          <div class="proof-card">
-            <div class="proof-label">Final Payment Proof</div>
-            <img src="${booking.paymentProofFinal}" alt="Final Proof" />
-          </div>
-        `;
-      }
-      if (booking.paymentProofExtra) {
-        screenshotsHTML += `
-          <div class="proof-card">
-            <div class="proof-label">Extra Charges Payment Proof</div>
-            <img src="${booking.paymentProofExtra}" alt="Extra Proof" />
-          </div>
-        `;
-      }
-      screenshotsHTML += `</div>`;
-    }
+    // 1. Direct real PDF download (bypasses any browser popup block)
+    const result = downloadInvoicePDFFile(invoiceData, isDepositOnly, {
+      bankDetails,
+      venueDetails,
+    });
 
-    // Build extra charges rows
-    let extrasRows = '';
-    if (booking.extraCharges && booking.extraCharges.length > 0) {
-      booking.extraCharges.forEach(extra => {
-        extrasRows += `
-          <tr>
-            <td>• ${extra.label}</td>
-            <td class="text-right">+£${extra.amount.toLocaleString()}</td>
-          </tr>
-        `;
+    if (result.success) {
+      setCustomAlert({
+        message: `Downloaded ${isDepositOnly ? 'Deposit' : 'Final'} Invoice PDF (${result.filename})!`,
+        type: 'success',
       });
     }
 
-    // Build html content
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Booking Summary & Invoice - ${booking.name}</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          @media print {
-            .no-print-bar { display: none !important; }
-            body { padding: 0 !important; }
-          }
-          .no-print-bar {
-            position: sticky;
-            top: 0;
-            background: #1f2937;
-            color: white;
-            padding: 10px 16px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            z-index: 9999;
-            margin: -40px -40px 20px -40px;
-          }
-          .no-print-btn {
-            background: #C8860A;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-weight: bold;
-            cursor: pointer;
-            font-size: 13px;
-          }
-          body {
-            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            color: #333;
-            margin: 0;
-            padding: 40px;
-            line-height: 1.5;
-            font-size: 14px;
-          }
-          .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            border-bottom: 2px solid #C8860A;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-          }
-          .header-left h1 {
-            margin: 0 0 5px 0;
-            font-size: 24px;
-            color: #1a1a1a;
-            letter-spacing: -0.5px;
-          }
-          .header-left p {
-            margin: 0;
-            color: #666;
-            font-size: 13px;
-          }
-          .logo {
-            max-height: 50px;
-            object-fit: contain;
-          }
-          .grid-2 {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 40px;
-            margin-bottom: 30px;
-          }
-          .details-card h3 {
-            margin: 0 0 10px 0;
-            color: #C8860A;
-            font-size: 15px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 5px;
-          }
-          .details-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-          }
-          .details-label {
-            color: #666;
-            font-weight: 500;
-          }
-          .details-value {
-            font-weight: 600;
-            color: #1a1a1a;
-          }
-          .section-title {
-            font-size: 16px;
-            font-weight: 700;
-            color: #1a1a1a;
-            margin-top: 30px;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #eee;
-            padding-bottom: 5px;
-          }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 30px;
-          }
-          th {
-            background-color: #f8f9fa;
-            font-weight: bold;
-            text-align: left;
-            padding: 10px;
-            border-bottom: 1px solid #dee2e6;
-          }
-          td {
-            padding: 10px;
-            border-bottom: 1px solid #eee;
-            vertical-align: top;
-          }
-          .text-right {
-            text-align: right;
-          }
-          .totals-table {
-            width: 50%;
-            margin-left: auto;
-          }
-          .totals-table td {
-            border: none;
-            padding: 6px 10px;
-          }
-          .grand-total {
-            font-size: 16px;
-            font-weight: 700;
-            color: #C8860A;
-            border-top: 2px solid #C8860A !important;
-            border-bottom: 2px solid #C8860A !important;
-            padding: 10px !important;
-          }
-          .proof-container {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            margin-top: 15px;
-            page-break-inside: avoid;
-          }
-          .proof-card {
-            flex: 1;
-            min-width: 200px;
-            max-width: 250px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 10px;
-            background-color: #fdfdfd;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-            text-align: center;
-          }
-          .proof-label {
-            font-size: 12px;
-            font-weight: bold;
-            color: #555;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-          }
-          .proof-card img {
-            max-width: 100%;
-            max-height: 180px;
-            object-fit: contain;
-            border-radius: 4px;
-          }
-          .footer-note {
-            margin-top: 50px;
-            border-top: 1px solid #eee;
-            padding-top: 20px;
-            text-align: center;
-            color: #888;
-            font-size: 11px;
-          }
-          @media print {
-            body {
-              padding: 20px;
-            }
-            .proof-card {
-              page-break-inside: avoid;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="no-print-bar">
-          <button class="no-print-btn" onclick="if(window.opener){window.close();}else{history.back();}" style="background:#4B5563;">✕ Close / Go Back</button>
-          <button class="no-print-btn" onclick="window.print()">🖨️ Print / Save PDF</button>
-        </div>
-          </thead>
-          <tbody>
-            <tr>
-              <td>
-                <strong>Package: ${booking.selectedMenu || booking.package || 'Not Selected'}</strong>
-                <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                  • Adults: ${adults} × £${pricePerPerson}/person<br/>
-                  • Kids (4-10 yrs): ${kids4to10} × £${kidsPrice}/person<br/>
-                  • Kids (0-4 yrs): ${kidsUnder4} × Free
-                </div>
-              </td>
-              <td class="text-right" style="vertical-align: middle;">£${booking.baseAmount.toLocaleString()}</td>
-            </tr>
-            ${hallCharge ? `
-            <tr>
-              <td>🏛️ ${hallCharge.label}</td>
-              <td class="text-right">£${hallCharge.amount.toLocaleString()}</td>
-            </tr>
-            ` : ''}
-            ${extrasRows}
-          </tbody>
-        </table>
+    // 2. Also open the clean, responsive preview window with working Print & Download buttons
+    try {
+      openInvoicePrintWindow(invoiceData, isDepositOnly, {
+        bankDetails,
+        venueDetails,
+      });
+    } catch (e) {
+      // Gracefully handled
+    }
+  };
 
-        <div class="section-title">Payment Summary</div>
-        <table class="totals-table">
-          <tbody>
-            <tr>
-              <td>Subtotal:</td>
-              <td class="text-right">£${(booking.baseAmount + (hallCharge?.amount || 0) + extraChargesTotal).toLocaleString()}</td>
-            </tr>
-            ${booking.discount ? `
-            <tr>
-              <td style="color: #d9534f;">Discount (${booking.discount.reason}):</td>
-              <td class="text-right" style="color: #d9534f;">-£${discountAmount.toLocaleString()}</td>
-            </tr>
-            ` : ''}
-            <tr class="grand-total">
-              <td>Grand Total (Incl. Hall):</td>
-              <td class="text-right">£${grandTotal.toLocaleString()}</td>
-            </tr>
-            
-            <!-- Payment Breakdown Details -->
-            <tr>
-              <td colspan="2" style="padding-top: 15px; padding-bottom: 5px; font-weight: bold; border-bottom: 1px solid #eee; color: #C8860A; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">
-                Payment Breakdown
-              </td>
-            </tr>
-            <tr>
-              <td style="padding-top: 8px; padding-left: 10px; color: #555;">
-                • Deposit Paid:
-                ${isDepositPaid && booking.paymentMethodDeposit ? `
-                  <div style="font-size: 11px; color: #666; margin-left: 10px; margin-top: 2px; font-style: italic;">
-                    Paid via ${booking.paymentMethodDeposit.replace('Paid by ', '')}
-                  </div>
-                ` : ''}
-              </td>
-              <td class="text-right" style="padding-top: 8px; color: ${isDepositPaid ? '#2b7a4a' : '#c86a00'}; font-weight: 500;">
-                ${isDepositPaid ? `-£${booking.deposit.toLocaleString()} (Paid)` : `£${booking.deposit.toLocaleString()} (Pending)`}
-              </td>
-            </tr>
-            <tr>
-              <td style="padding-left: 10px; color: #555;">
-                • Final Payment (Main Balance):
-                ${booking.finalPaymentPaid && booking.paymentMethodFinal ? `
-                  <div style="font-size: 11px; color: #666; margin-left: 10px; margin-top: 2px; font-style: italic;">
-                    Paid via ${booking.paymentMethodFinal.replace('Paid by ', '')}
-                  </div>
-                ` : ''}
-              </td>
-              <td class="text-right" style="color: ${booking.finalPaymentPaid ? '#2b7a4a' : '#c86a00'}; font-weight: 500;">
-                ${booking.finalPaymentPaid ? `-£${finalPaymentPaidAmt.toLocaleString()} (Paid)` : `£${finalPaymentPaidAmt.toLocaleString()} (Pending)`}
-              </td>
-            </tr>
-            
-            ${(booking.extraCharges || []).map(extra => `
-            <tr>
-              <td style="padding-left: 10px; color: #555; vertical-align: top;">
-                • ${extra.label}:
-                ${isExtraPaid && booking.paymentMethodFinal ? `
-                  <div style="font-size: 11px; color: #666; margin-left: 10px; margin-top: 2px; font-style: italic;">
-                    Paid via ${booking.paymentMethodFinal.replace('Paid by ', '')}
-                  </div>
-                ` : ''}
-              </td>
-              <td class="text-right" style="color: ${isExtraPaid ? '#2b7a4a' : '#c86a00'}; font-weight: 500; vertical-align: top;">
-                ${isExtraPaid ? `-£${extra.amount.toLocaleString()} (Paid)` : `£${extra.amount.toLocaleString()} (Pending)`}
-              </td>
-            </tr>
-            `).join('')}
-            
-            <tr style="border-top: 1px solid #ddd;">
-              <td style="font-weight: bold; padding-top: 10px;">Total Paid:</td>
-              <td class="text-right" style="font-weight: bold; color: #2b7a4a; padding-top: 10px;">
-                £${(
-                  (isDepositPaid ? booking.deposit : 0) +
-                  (booking.finalPaymentPaid ? finalPaymentPaidAmt : 0) +
-                  (isExtraPaid ? extraChargesTotal : 0)
-                ).toLocaleString()}
-              </td>
-            </tr>
-            <tr>
-              <td style="font-weight: bold; padding-bottom: 10px;">Remaining Balance Due:</td>
-              <td class="text-right" style="font-weight: bold; color: ${
-                (grandTotal - (
-                  (isDepositPaid ? booking.deposit : 0) +
-                  (booking.finalPaymentPaid ? finalPaymentPaidAmt : 0) +
-                  (isExtraPaid ? extraChargesTotal : 0)
-                )) <= 0 ? '#2b7a4a' : '#c86a00'
-              }; padding-bottom: 10px;">
-                ${(grandTotal - (
-                  (isDepositPaid ? booking.deposit : 0) +
-                  (booking.finalPaymentPaid ? finalPaymentPaidAmt : 0) +
-                  (isExtraPaid ? extraChargesTotal : 0)
-                )) <= 0 ? 'PAID IN FULL ✓' : `£${(grandTotal - (
-                  (isDepositPaid ? booking.deposit : 0) +
-                  (booking.finalPaymentPaid ? finalPaymentPaidAmt : 0) +
-                  (isExtraPaid ? extraChargesTotal : 0)
-                )).toLocaleString()}`}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+  const handleOpenWhatsAppInvoiceModal = (b: Booking, defaultType: 'final' | 'deposit' = 'final') => {
+    setWhatsAppInvoiceBooking(b);
+    setWhatsAppInvoiceType(defaultType);
+    setWhatsAppCustomPhone(b.phone || '');
+  };
 
-        ${screenshotsHTML}
+  const handleSendWhatsAppInvoice = async (mode: 'share_file' | 'open_chat' | 'download_pdf') => {
+    if (!whatsAppInvoiceBooking) return;
+    const isDepositOnly = whatsAppInvoiceType === 'deposit';
+    const pkgName = whatsAppInvoiceBooking.selectedMenu || whatsAppInvoiceBooking.package;
+    const pkgObj = editableBanquetPackages.find(p => p.name === pkgName);
+    const kidsPrice = whatsAppInvoiceBooking.kidsPricePerPerson ?? (pkgObj?.kidsPrice || getKidsPrice(editableKidsPricing, pkgName));
+    const pricePerPerson = whatsAppInvoiceBooking.pricePerPerson ?? (pkgObj?.pricePerPerson || 0);
+    const hallCharge = getBookingHallCharge(whatsAppInvoiceBooking);
 
-        <div class="footer-note">
-          Thank you for choosing Honeymoon Events. If you have any questions regarding this invoice, please contact us.
-        </div>
+    const invoiceData: InvoiceBookingData = {
+      ...whatsAppInvoiceBooking,
+      phone: whatsAppCustomPhone.trim() || whatsAppInvoiceBooking.phone,
+      pricePerPerson,
+      kidsPricePerPerson: kidsPrice,
+      venueHallCharge: hallCharge,
+    };
 
-        <script>
-          window.onload = function() {
-            setTimeout(function() {
-              window.print();
-            }, 600);
-          };
-        </script>
-      </body>
-      </html>
-    `;
+    if (mode === 'download_pdf') {
+      downloadInvoicePDFFile(invoiceData, isDepositOnly, { bankDetails, venueDetails });
+      setCustomAlert({ message: 'Downloaded invoice PDF!', type: 'success' });
+      return;
+    }
 
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+    if (mode === 'share_file') {
+      setIsSharingWhatsApp(true);
+      try {
+        const res = await shareInvoicePDFViaWhatsApp(invoiceData, isDepositOnly, { bankDetails, venueDetails });
+        if (res.shared) {
+          setCustomAlert({ message: 'Invoice shared to WhatsApp successfully!', type: 'success' });
+          setWhatsAppInvoiceBooking(null);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsSharingWhatsApp(false);
+      }
+      return;
+    }
+
+    if (mode === 'open_chat') {
+      const cleanPhone = cleanPhoneNumber(whatsAppCustomPhone.trim() || whatsAppInvoiceBooking.phone);
+      const text = buildInvoiceWhatsAppMessage(invoiceData, isDepositOnly, { bankDetails, venueDetails });
+      const waUrl = cleanPhone
+        ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
+        : `https://wa.me/?text=${encodeURIComponent(text)}`;
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+      setWhatsAppInvoiceBooking(null);
+    }
   };
 
   const enquiries = bookings.filter(b => {
@@ -3521,7 +3220,7 @@ Warm regards,
                                       <div className="flex items-center gap-1 border-l border-gray-200 pl-2">
                                         <button
                                           type="button"
-                                          onClick={(e) => { e.stopPropagation(); generateChefMenuPDF(booking); }}
+                                          onClick={(e) => { e.stopPropagation(); downloadChefMenuPDF(booking); generateChefMenuPDF(booking); }}
                                           className="p-1 rounded hover:bg-amber-50 text-gray-400 hover:text-amber-700 transition-colors"
                                           title="Download / Print Menu PDF (Chef Sheet)"
                                         >
@@ -3542,6 +3241,17 @@ Warm regards,
                                           title="Download Final Invoice PDF"
                                         >
                                           <Icon name="DocumentCheckIcon" size={14} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); handleOpenWhatsAppInvoiceModal(booking); }}
+                                          className="p-1 rounded hover:bg-emerald-100 text-[#25D366] hover:text-[#128C7E] transition-all transform hover:scale-110"
+                                          title="Deliver Invoice PDF to Customer via WhatsApp"
+                                        >
+                                          <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                                            <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.533 5.859L.057 23.428a.75.75 0 0 0 .921.921l5.684-1.47A11.943 11.943 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.694 9.694 0 0 1-4.946-1.356l-.355-.211-3.676.95.974-3.578-.231-.368A9.693 9.693 0 0 1 2.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/>
+                                          </svg>
                                         </button>
                                       </div>
                                       {currentUser?.role === 'Super Admin' && (
@@ -4654,7 +4364,7 @@ Warm regards,
                               </button>
                               {/* 1. Menu PDF for Chef */}
                               <button
-                                onClick={() => generateChefMenuPDF(b)}
+                                onClick={() => { downloadChefMenuPDF(b); generateChefMenuPDF(b); }}
                                 className="text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-amber-200 shadow-2xs"
                                 title="Download / Print Chef Menu Sheet PDF"
                               >
@@ -4678,6 +4388,18 @@ Warm regards,
                               >
                                 <Icon name="DocumentCheckIcon" size={13} />
                                 Final PDF
+                              </button>
+                              {/* 4. WhatsApp Invoice Delivery */}
+                              <button
+                                onClick={() => handleOpenWhatsAppInvoiceModal(b)}
+                                className="text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold border border-emerald-300 shadow-2xs"
+                                title="Deliver Invoice PDF via WhatsApp"
+                              >
+                                <svg viewBox="0 0 24 24" fill="#25D366" className="w-3.5 h-3.5">
+                                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                                  <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.533 5.859L.057 23.428a.75.75 0 0 0 .921.921l5.684-1.47A11.943 11.943 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.694 9.694 0 0 1-4.946-1.356l-.355-.211-3.676.95.974-3.578-.231-.368A9.693 9.693 0 0 1 2.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/>
+                                </svg>
+                                WhatsApp PDF
                               </button>
                             </div>
                             {currentUser?.role === 'Super Admin' && (
@@ -5937,7 +5659,7 @@ Warm regards,
                   {/* 1. Menu PDF */}
                   <button
                     type="button"
-                    onClick={() => generateChefMenuPDF(selectedBooking)}
+                    onClick={() => { downloadChefMenuPDF(selectedBooking); generateChefMenuPDF(selectedBooking); }}
                     className="flex flex-col items-center justify-center gap-1 p-2.5 rounded-xl border border-amber-200 bg-white hover:bg-amber-50 transition-all font-bold text-amber-950 text-center shadow-2xs group"
                     title="Download / Print Chef Menu Sheet PDF"
                   >
@@ -5970,6 +5692,21 @@ Warm regards,
                     <span className="text-[9px] text-gray-500 font-normal">Total Bill</span>
                   </button>
                 </div>
+
+                {/* Quick WhatsApp Deliver Invoice PDF to Customer */}
+                <button
+                  type="button"
+                  onClick={() => handleOpenWhatsAppInvoiceModal(selectedBooking)}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold text-white shadow-2xs hover:shadow-xs transition-all"
+                  style={{ background: '#25D366' }}
+                  title="Deliver Invoice PDF to Customer via WhatsApp"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                    <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.533 5.859L.057 23.428a.75.75 0 0 0 .921.921l5.684-1.47A11.943 11.943 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.694 9.694 0 0 1-4.946-1.356l-.355-.211-3.676.95.974-3.578-.231-.368A9.693 9.693 0 0 1 2.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/>
+                  </svg>
+                  <span>Deliver Invoice PDF via WhatsApp</span>
+                </button>
 
                 {/* Quick WhatsApp Menu to Chef */}
                 <button
@@ -8482,6 +8219,167 @@ Warm regards,
                   className="w-full py-2 bg-gray-900 hover:bg-black text-white font-bold rounded-xl transition-colors"
                 >
                   Apply Bespoke Hall Fee
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── DELIVER INVOICE VIA WHATSAPP MODAL ─── */}
+      {whatsAppInvoiceBooking && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg border border-gray-100 overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Modal Header */}
+            <div className="p-4 px-6 text-white flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #128C7E, #25D366)' }}>
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-xs">
+                  <svg viewBox="0 0 24 24" fill="white" className="w-5 h-5">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                    <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.533 5.859L.057 23.428a.75.75 0 0 0 .921.921l5.684-1.47A11.943 11.943 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.694 9.694 0 0 1-4.946-1.356l-.355-.211-3.676.95.974-3.578-.231-.368A9.693 9.693 0 0 1 2.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm leading-tight">Deliver Invoice via WhatsApp</h3>
+                  <p className="text-[11px] text-white/80">Booking #{whatsAppInvoiceBooking.id} • {whatsAppInvoiceBooking.name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWhatsAppInvoiceBooking(null)}
+                className="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+              >
+                <Icon name="XMarkIcon" size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Recipient Phone */}
+              <div className="bg-gray-50 rounded-2xl p-3.5 border border-gray-200 space-y-2">
+                <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                  Customer WhatsApp Phone
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={whatsAppCustomPhone}
+                      onChange={(e) => setWhatsAppCustomPhone(e.target.value)}
+                      placeholder="+44 7700 900000"
+                      className="w-full bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#25D366]"
+                    />
+                  </div>
+                  <span className="text-[11px] text-gray-500 font-medium">({whatsAppInvoiceBooking.name})</span>
+                </div>
+              </div>
+
+              {/* Invoice Type Selector */}
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Select Invoice Document Type
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setWhatsAppInvoiceType('final')}
+                    className={`p-3 rounded-2xl border text-left transition-all ${
+                      whatsAppInvoiceType === 'final'
+                        ? 'bg-blue-50/70 border-blue-400 ring-2 ring-blue-300 text-blue-950 font-bold shadow-xs'
+                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 font-medium'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-blue-900">Final / Full Invoice</span>
+                      <Icon name="DocumentCheckIcon" size={16} className="text-blue-600" />
+                    </div>
+                    <div className="text-[11px] text-gray-500 mt-1">
+                      Grand Total &amp; Remaining Balance
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWhatsAppInvoiceType('deposit')}
+                    className={`p-3 rounded-2xl border text-left transition-all ${
+                      whatsAppInvoiceType === 'deposit'
+                        ? 'bg-emerald-50/70 border-emerald-400 ring-2 ring-emerald-300 text-emerald-950 font-bold shadow-xs'
+                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 font-medium'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-900">Deposit Invoice</span>
+                      <Icon name="DocumentTextIcon" size={16} className="text-emerald-600" />
+                    </div>
+                    <div className="text-[11px] text-gray-500 mt-1">
+                      Deposit £{whatsAppInvoiceBooking.deposit.toLocaleString()}
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Message Preview Box */}
+              <div className="bg-[#EFEAE2] rounded-2xl p-3.5 border border-[#DAD3C8] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#54656F]">
+                    WhatsApp Message &amp; PDF Delivery Preview
+                  </span>
+                  <span className="text-[10px] text-emerald-700 font-bold bg-white/70 px-2 py-0.5 rounded-full">
+                    Includes PDF Link
+                  </span>
+                </div>
+                <div className="bg-white rounded-xl p-3 text-[11px] text-[#111B21] leading-relaxed shadow-2xs font-sans whitespace-pre-wrap max-h-36 overflow-y-auto">
+                  {(() => {
+                    const pkgName = whatsAppInvoiceBooking.selectedMenu || whatsAppInvoiceBooking.package;
+                    const pkgObj = editableBanquetPackages.find(p => p.name === pkgName);
+                    const kidsPrice = whatsAppInvoiceBooking.kidsPricePerPerson ?? (pkgObj?.kidsPrice || getKidsPrice(editableKidsPricing, pkgName));
+                    const pricePerPerson = whatsAppInvoiceBooking.pricePerPerson ?? (pkgObj?.pricePerPerson || 0);
+                    const hallCharge = getBookingHallCharge(whatsAppInvoiceBooking);
+                    const invData: InvoiceBookingData = {
+                      ...whatsAppInvoiceBooking,
+                      phone: whatsAppCustomPhone.trim() || whatsAppInvoiceBooking.phone,
+                      pricePerPerson,
+                      kidsPricePerPerson: kidsPrice,
+                      venueHallCharge: hallCharge,
+                    };
+                    return buildInvoiceWhatsAppMessage(invData, whatsAppInvoiceType === 'deposit', { bankDetails, venueDetails });
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="p-4 bg-gray-50 border-t border-gray-200 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => handleSendWhatsAppInvoice('share_file')}
+                disabled={isSharingWhatsApp}
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs font-bold text-white shadow-md active:scale-98 transition-all disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg, #059669, #10B981)' }}
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                  <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.533 5.859L.057 23.428a.75.75 0 0 0 .921.921l5.684-1.47A11.943 11.943 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.694 9.694 0 0 1-4.946-1.356l-.355-.211-3.676.95.974-3.578-.231-.368A9.693 9.693 0 0 1 2.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/>
+                </svg>
+                <span>{isSharingWhatsApp ? 'Attaching & Sharing PDF...' : '📱 Deliver PDF Document to WhatsApp'}</span>
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSendWhatsAppInvoice('open_chat')}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-semibold text-gray-800 bg-white hover:bg-gray-100 border border-gray-300 transition-colors shadow-2xs"
+                >
+                  <Icon name="ChatBubbleLeftRightIcon" size={14} className="text-[#25D366]" />
+                  <span>Open Chat with Link</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSendWhatsAppInvoice('download_pdf')}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-semibold text-gray-800 bg-white hover:bg-gray-100 border border-gray-300 transition-colors shadow-2xs"
+                >
+                  <Icon name="ArrowDownTrayIcon" size={14} className="text-amber-600" />
+                  <span>Download PDF Only</span>
                 </button>
               </div>
             </div>

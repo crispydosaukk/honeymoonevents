@@ -1,3 +1,6 @@
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
 export interface ChefMenuData {
   id?: string;
   bookingRef?: string;
@@ -36,10 +39,85 @@ export interface ChefMenuData {
   extras?: { name: string; price?: number }[] | string[];
 }
 
+export function downloadChefMenuPDF(data: ChefMenuData): { success: boolean; filename: string } {
+  try {
+    const bookingId = data.id || data.bookingRef || 'DRAFT-' + new Date().getTime().toString().slice(-6);
+    const clientName = (data.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `Chef_Sheet_#${bookingId}_${clientName}.pdf`;
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 14;
+
+    // Header bar
+    doc.setFillColor(200, 134, 10);
+    doc.rect(margin, 12, pageWidth - margin * 2, 2, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(17, 24, 39);
+    doc.text('KITCHEN ORDER TICKET (CHEF SHEET)', margin, 22);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(107, 114, 128);
+    doc.text(`Booking Ref: #${bookingId} • Client: ${data.name || 'Client'} (${data.phone || 'N/A'})`, margin, 28);
+    doc.text(`Date: ${data.date || 'TBC'} • Service Time: ${data.time || data.timeOfDay || 'TBC'} • Event: ${data.eventType || 'Event'}`, margin, 33);
+    const adults = data.adults ?? (data.guests || 0);
+    const kids = data.kids4to10 || 0;
+    const infants = data.kidsUnder4 || 0;
+    doc.text(`Total Guests: ${adults + kids + infants} (${adults} Adults, ${kids} Kids 4-10y, ${infants} Under 4y) • Package: ${data.selectedMenu || data.package || 'Catering'}`, margin, 38);
+
+    const vegStarters = data.selectedDishes?.vegStarters || data.vegStarters || [];
+    const nonVegStarters = data.selectedDishes?.nonVegStarters || data.nonVegStarters || [];
+    const vegMains = data.selectedDishes?.vegMains || data.vegMains || [];
+    const nonVegMains = data.selectedDishes?.nonVegMains || data.nonVegMains || [];
+    const sundries = data.selectedDishes?.sundries || data.sundries || [];
+    const desserts = data.selectedDishes?.desserts || data.desserts || [];
+    const liveCounters = (data.liveCounters || []).map(i => typeof i === 'string' ? i : i.name);
+    const extras = (data.extras || []).map(i => typeof i === 'string' ? i : i.name);
+
+    const menuRows: [string, string][] = [];
+    if (vegStarters.length) menuRows.push(['🥗 Veg Starters', vegStarters.join(', ')]);
+    if (nonVegStarters.length) menuRows.push(['🍗 Non-Veg Starters', nonVegStarters.join(', ')]);
+    if (vegMains.length) menuRows.push(['🍛 Veg Mains', vegMains.join(', ')]);
+    if (nonVegMains.length) menuRows.push(['🍖 Non-Veg Mains', nonVegMains.join(', ')]);
+    if (sundries.length) menuRows.push(['🍚 Sundries & Breads', sundries.join(', ')]);
+    if (desserts.length) menuRows.push(['🍮 Desserts', desserts.join(', ')]);
+    if (liveCounters.length) menuRows.push(['🎪 Live Counters', liveCounters.join(', ')]);
+    if (extras.length) menuRows.push(['✨ Event Extras', extras.join(', ')]);
+    if (data.notes) menuRows.push(['📝 Kitchen Instructions', data.notes]);
+
+    autoTable(doc, {
+      startY: 44,
+      head: [['Category', 'Dishes & Specifications']],
+      body: menuRows,
+      theme: 'grid',
+      headStyles: { fillColor: [200, 134, 10], textColor: [255, 255, 255], fontStyle: 'bold' },
+      columnStyles: { 0: { cellWidth: 48, fontStyle: 'bold' }, 1: { cellWidth: pageWidth - margin * 2 - 48 } },
+      styles: { fontSize: 9, cellPadding: 3.5 }
+    });
+
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 10000);
+    return { success: true, filename };
+  } catch (e) {
+    console.error('Failed to download chef menu PDF:', e);
+    return { success: false, filename: '' };
+  }
+}
+
 export function generateChefMenuPDF(data: ChefMenuData): void {
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
-    alert('Please allow popups to open the Chef Menu PDF.');
+    // Popup was blocked on mobile — fallback immediately to downloading the PDF file!
+    downloadChefMenuPDF(data);
     return;
   }
 
@@ -763,9 +841,12 @@ export function generateChefMenuPDF(data: ChefMenuData): void {
 
       <script>
         window.onload = function() {
-          setTimeout(function() {
-            window.print();
-          }, 500);
+          const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+          if (!isMobile) {
+            setTimeout(function() {
+              window.print();
+            }, 500);
+          }
         };
       </script>
     </body>
