@@ -441,6 +441,7 @@ export default function AdminPage() {
   const [whatsAppInvoiceType, setWhatsAppInvoiceType] = useState<'final' | 'deposit'>('final');
   const [whatsAppCustomPhone, setWhatsAppCustomPhone] = useState<string>('');
   const [isSharingWhatsApp, setIsSharingWhatsApp] = useState<boolean>(false);
+  const [whatsAppCustomMessage, setWhatsAppCustomMessage] = useState<string>('');
 
   // Booking Tracker Filter States
   const [trackerStatusFilter, setTrackerStatusFilter] = useState<string>('all');
@@ -2389,10 +2390,38 @@ Warm regards,
     }
   };
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).triggerInvoiceDownload = (id: string, isDepositOnly: boolean = false) => {
+        const found = bookings.find(b => b.id === id);
+        if (found) {
+          downloadInvoicePDF(found, isDepositOnly);
+        }
+      };
+    }
+  }, [bookings, bankDetails, venueDetails]);
+
+  const getInitialWhatsAppMsg = (b: Booking, type: 'final' | 'deposit', phoneVal?: string) => {
+    const pkgName = b.selectedMenu || b.package;
+    const pkgObj = editableBanquetPackages.find(p => p.name === pkgName);
+    const kidsPrice = b.kidsPricePerPerson ?? (pkgObj?.kidsPrice || getKidsPrice(editableKidsPricing, pkgName));
+    const pricePerPerson = b.pricePerPerson ?? (pkgObj?.pricePerPerson || 0);
+    const hallCharge = getBookingHallCharge(b);
+    const invData: InvoiceBookingData = {
+      ...b,
+      phone: (phoneVal ?? b.phone) || '',
+      pricePerPerson,
+      kidsPricePerPerson: kidsPrice,
+      venueHallCharge: hallCharge,
+    };
+    return buildInvoiceWhatsAppMessage(invData, type === 'deposit', { bankDetails, venueDetails });
+  };
+
   const handleOpenWhatsAppInvoiceModal = (b: Booking, defaultType: 'final' | 'deposit' = 'final') => {
     setWhatsAppInvoiceBooking(b);
     setWhatsAppInvoiceType(defaultType);
     setWhatsAppCustomPhone(b.phone || '');
+    setWhatsAppCustomMessage(getInitialWhatsAppMsg(b, defaultType, b.phone || ''));
   };
 
   const handleSendWhatsAppInvoice = async (mode: 'share_file' | 'open_chat' | 'download_pdf') => {
@@ -2418,10 +2447,12 @@ Warm regards,
       return;
     }
 
+    const messageText = whatsAppCustomMessage.trim() || buildInvoiceWhatsAppMessage(invoiceData, isDepositOnly, { bankDetails, venueDetails });
+
     if (mode === 'share_file') {
       setIsSharingWhatsApp(true);
       try {
-        const res = await shareInvoicePDFViaWhatsApp(invoiceData, isDepositOnly, { bankDetails, venueDetails });
+        const res = await shareInvoicePDFViaWhatsApp(invoiceData, isDepositOnly, { bankDetails, venueDetails }, messageText);
         if (res.shared) {
           setCustomAlert({ message: 'Invoice shared to WhatsApp successfully!', type: 'success' });
           setWhatsAppInvoiceBooking(null);
@@ -2436,10 +2467,9 @@ Warm regards,
 
     if (mode === 'open_chat') {
       const cleanPhone = cleanPhoneNumber(whatsAppCustomPhone.trim() || whatsAppInvoiceBooking.phone);
-      const text = buildInvoiceWhatsAppMessage(invoiceData, isDepositOnly, { bankDetails, venueDetails });
       const waUrl = cleanPhone
-        ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
-        : `https://wa.me/?text=${encodeURIComponent(text)}`;
+        ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageText)}`
+        : `https://wa.me/?text=${encodeURIComponent(messageText)}`;
       window.open(waUrl, '_blank', 'noopener,noreferrer');
       setWhatsAppInvoiceBooking(null);
     }
@@ -3220,7 +3250,7 @@ Warm regards,
                                       <div className="flex items-center gap-1 border-l border-gray-200 pl-2">
                                         <button
                                           type="button"
-                                          onClick={(e) => { e.stopPropagation(); downloadChefMenuPDF(booking); generateChefMenuPDF(booking); }}
+                                          onClick={(e) => { e.stopPropagation(); generateChefMenuPDF(booking); }}
                                           className="p-1 rounded hover:bg-amber-50 text-gray-400 hover:text-amber-700 transition-colors"
                                           title="Download / Print Menu PDF (Chef Sheet)"
                                         >
@@ -8282,7 +8312,10 @@ Warm regards,
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setWhatsAppInvoiceType('final')}
+                    onClick={() => {
+                      setWhatsAppInvoiceType('final');
+                      setWhatsAppCustomMessage(getInitialWhatsAppMsg(whatsAppInvoiceBooking, 'final', whatsAppCustomPhone));
+                    }}
                     className={`p-3 rounded-2xl border text-left transition-all ${
                       whatsAppInvoiceType === 'final'
                         ? 'bg-blue-50/70 border-blue-400 ring-2 ring-blue-300 text-blue-950 font-bold shadow-xs'
@@ -8300,7 +8333,10 @@ Warm regards,
 
                   <button
                     type="button"
-                    onClick={() => setWhatsAppInvoiceType('deposit')}
+                    onClick={() => {
+                      setWhatsAppInvoiceType('deposit');
+                      setWhatsAppCustomMessage(getInitialWhatsAppMsg(whatsAppInvoiceBooking, 'deposit', whatsAppCustomPhone));
+                    }}
                     className={`p-3 rounded-2xl border text-left transition-all ${
                       whatsAppInvoiceType === 'deposit'
                         ? 'bg-emerald-50/70 border-emerald-400 ring-2 ring-emerald-300 text-emerald-950 font-bold shadow-xs'
@@ -8318,33 +8354,27 @@ Warm regards,
                 </div>
               </div>
 
-              {/* Message Preview Box */}
+              {/* Message Box */}
               <div className="bg-[#EFEAE2] rounded-2xl p-3.5 border border-[#DAD3C8] space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#54656F]">
-                    WhatsApp Message &amp; PDF Delivery Preview
+                    WhatsApp Message (Editable)
                   </span>
-                  <span className="text-[10px] text-emerald-700 font-bold bg-white/70 px-2 py-0.5 rounded-full">
-                    Includes PDF Link
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setWhatsAppCustomMessage(getInitialWhatsAppMsg(whatsAppInvoiceBooking, whatsAppInvoiceType, whatsAppCustomPhone))}
+                    className="text-[10px] text-emerald-800 font-bold bg-white/80 hover:bg-white px-2 py-0.5 rounded-full border border-[#DAD3C8] transition-colors"
+                  >
+                    Reset Text
+                  </button>
                 </div>
-                <div className="bg-white rounded-xl p-3 text-[11px] text-[#111B21] leading-relaxed shadow-2xs font-sans whitespace-pre-wrap max-h-36 overflow-y-auto">
-                  {(() => {
-                    const pkgName = whatsAppInvoiceBooking.selectedMenu || whatsAppInvoiceBooking.package;
-                    const pkgObj = editableBanquetPackages.find(p => p.name === pkgName);
-                    const kidsPrice = whatsAppInvoiceBooking.kidsPricePerPerson ?? (pkgObj?.kidsPrice || getKidsPrice(editableKidsPricing, pkgName));
-                    const pricePerPerson = whatsAppInvoiceBooking.pricePerPerson ?? (pkgObj?.pricePerPerson || 0);
-                    const hallCharge = getBookingHallCharge(whatsAppInvoiceBooking);
-                    const invData: InvoiceBookingData = {
-                      ...whatsAppInvoiceBooking,
-                      phone: whatsAppCustomPhone.trim() || whatsAppInvoiceBooking.phone,
-                      pricePerPerson,
-                      kidsPricePerPerson: kidsPrice,
-                      venueHallCharge: hallCharge,
-                    };
-                    return buildInvoiceWhatsAppMessage(invData, whatsAppInvoiceType === 'deposit', { bankDetails, venueDetails });
-                  })()}
-                </div>
+                <textarea
+                  value={whatsAppCustomMessage}
+                  onChange={(e) => setWhatsAppCustomMessage(e.target.value)}
+                  rows={6}
+                  className="w-full bg-white rounded-xl p-3 text-[12px] text-[#111B21] leading-relaxed shadow-2xs font-sans border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#25D366] resize-none"
+                  placeholder="Official WhatsApp invoice message..."
+                />
               </div>
             </div>
 
@@ -8361,8 +8391,11 @@ Warm regards,
                   <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
                   <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.533 5.859L.057 23.428a.75.75 0 0 0 .921.921l5.684-1.47A11.943 11.943 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.694 9.694 0 0 1-4.946-1.356l-.355-.211-3.676.95.974-3.578-.231-.368A9.693 9.693 0 0 1 2.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/>
                 </svg>
-                <span>{isSharingWhatsApp ? 'Attaching & Sharing PDF...' : '📱 Deliver PDF Document to WhatsApp'}</span>
+                <span>{isSharingWhatsApp ? 'Preparing PDF & Opening WhatsApp...' : '💬 Send via WhatsApp & Download PDF'}</span>
               </button>
+              <p className="text-[10px] text-center text-gray-500 -mt-0.5 mb-1">
+                Downloads official PDF to your device &amp; opens WhatsApp with the verified invoice link
+              </p>
 
               <div className="grid grid-cols-2 gap-2">
                 <button

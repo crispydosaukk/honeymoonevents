@@ -430,21 +430,23 @@ function InvoiceContent() {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200 bg-white">
-              <tr>
-                <td className="py-4 px-4">
-                  <div className="font-bold text-sm text-neutral-900">
-                    Catering Package: {booking.selectedMenu || booking.package || 'Custom Banquet Package'}
-                  </div>
-                  <div className="text-neutral-500 text-xs mt-1 space-y-0.5">
-                    <div>• Adults: {calc.adults} × £{(booking.pricePerPerson || 0).toFixed(2)}/person</div>
-                    <div>• Kids (4-10 yrs): {calc.kids4to10} × £{(booking.kidsPricePerPerson || 0).toFixed(2)}/person</div>
-                    <div>• Infants (0-4 yrs): {calc.kidsUnder4} × Free</div>
-                  </div>
-                </td>
-                <td className="py-4 px-4 text-right font-bold text-sm text-neutral-900 align-middle">
-                  £{calc.baseAmount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </td>
-              </tr>
+              {(calc.baseAmount > 0 || !((booking.package || booking.selectedMenu || '').toLowerCase().includes('venue hire only') || (booking.eventType || '').toLowerCase().includes('venue hire'))) && (
+                <tr>
+                  <td className="py-4 px-4">
+                    <div className="font-bold text-sm text-neutral-900">
+                      Catering Package: {booking.selectedMenu || booking.package || 'Custom Banquet Package'}
+                    </div>
+                    <div className="text-neutral-500 text-xs mt-1 space-y-0.5">
+                      <div>• Adults: {calc.adults} × £{(booking.pricePerPerson || 0).toFixed(2)}/person</div>
+                      <div>• Kids (4-10 yrs): {calc.kids4to10} × £{(booking.kidsPricePerPerson || 0).toFixed(2)}/person</div>
+                      <div>• Infants (0-4 yrs): {calc.kidsUnder4} × Free</div>
+                    </div>
+                  </td>
+                  <td className="py-4 px-4 text-right font-bold text-sm text-neutral-900 align-middle">
+                    £{calc.baseAmount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                </tr>
+              )}
               {calc.hallCharge && calc.hallCharge.amount > 0 && (
                 <tr className="bg-neutral-50/50">
                   <td className="py-3 px-4 font-semibold text-neutral-800">

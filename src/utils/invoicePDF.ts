@@ -88,47 +88,71 @@ export function getInvoiceCalculations(booking: InvoiceBookingData, isDepositOnl
   const adults = booking.adults ?? (booking.guests || 0);
   const kids4to10 = booking.kids4to10 || 0;
   const kidsUnder4 = booking.kidsUnder4 || 0;
-  const totalGuests = adults + kids4to10 + kidsUnder4;
+  const totalGuests = (booking.guests && booking.guests > 0) ? booking.guests : (adults + kids4to10 + kidsUnder4);
 
-  const baseAmount = booking.baseAmount || 0;
-  const extraCharges = booking.extraCharges || [];
+  const baseAmount = Number(booking.baseAmount) || 0;
+  const rawExtras = booking.extraCharges || [];
+
+  // Separate Hall Hire from other Extras so Hall Hire is NEVER counted twice
+  const hallExtra = rawExtras.find((e) =>
+    e.label.toLowerCase().includes('hall hire') ||
+    e.label.toLowerCase().includes('dry hire') ||
+    e.label.toLowerCase().includes('venue hire')
+  );
+
+  let hallCharge = booking.venueHallCharge || null;
+  let hallAmount = 0;
+
+  if (hallExtra) {
+    hallAmount = Number(hallExtra.amount) || 0;
+    hallCharge = {
+      label: hallExtra.label.replace(/^Hall Hire:\s*/i, '').replace(/^Venue Hire:\s*/i, ''),
+      amount: hallAmount,
+    };
+  } else if (booking.venueHallCharge && typeof booking.venueHallCharge.amount === 'number' && booking.venueHallCharge.amount > 0) {
+    hallAmount = Number(booking.venueHallCharge.amount) || 0;
+    hallCharge = booking.venueHallCharge;
+  }
+
+  // Other extra charges (strictly excluding any hall hire to prevent double counting)
+  const extraCharges = rawExtras.filter((e) => e !== hallExtra);
   const extraChargesTotal = extraCharges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
 
   // Discount
   let discountAmount = 0;
   if (booking.discount) {
-    const sub = baseAmount + extraChargesTotal;
+    const sub = baseAmount + hallAmount + extraChargesTotal;
     if (booking.discount.type === 'percentage') {
       discountAmount = (sub * booking.discount.value) / 100;
     } else {
-      discountAmount = booking.discount.value || 0;
+      discountAmount = Number(booking.discount.value) || 0;
     }
   }
 
-  // Hall charge
-  const hallCharge = booking.venueHallCharge || null;
-  const hallAmount = hallCharge?.amount || 0;
-
-  // Grand total
+  // Grand Total: Food Package + Hall Hire + Other Extras - Discount
   const grandTotal = Math.max(0, baseAmount + hallAmount + extraChargesTotal - discountAmount);
 
-  // Deposit
-  const deposit = booking.deposit || 0;
+  // Deposit logic
+  const deposit = Number(booking.deposit) || 0;
   const isDepositPaid = isDepositOnly
     ? true
     : !!(booking.depositPaid || !['new_enquiry', 'menu_sent', 'menu_selected', 'deposit_pending'].includes(booking.status || ''));
 
-  // Final payment amount
-  const finalPaymentAmt = Math.max(0, grandTotal - deposit - extraChargesTotal);
-  const isFinalPaid = isDepositOnly ? false : !!booking.finalPaymentPaid;
-  const isExtraPaid = isDepositOnly ? false : (booking.status === 'completed' || !!booking.paymentProofExtra || isFinalPaid);
+  // Final payment logic
+  const isCompleted = booking.status === 'completed';
+  const isFinalPaid = isDepositOnly ? false : !!(booking.finalPaymentPaid || isCompleted);
+  const finalPaymentAmt = Math.max(0, grandTotal - deposit);
 
-  const totalPaid =
-    (isDepositPaid ? deposit : 0) +
-    (isFinalPaid ? finalPaymentAmt : 0) +
-    (isExtraPaid ? extraChargesTotal : 0);
+  let totalPaid = 0;
+  if (isCompleted) {
+    totalPaid = grandTotal;
+  } else {
+    totalPaid = (isDepositPaid ? deposit : 0) + (isFinalPaid ? finalPaymentAmt : 0);
+  }
 
-  const balanceDue = isDepositOnly ? Math.max(0, grandTotal - deposit) : Math.max(0, grandTotal - totalPaid);
+  const balanceDue = isDepositOnly
+    ? Math.max(0, grandTotal - deposit)
+    : Math.max(0, grandTotal - totalPaid);
 
   const formattedDate = booking.date
     ? new Date(booking.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -136,7 +160,7 @@ export function getInvoiceCalculations(booking: InvoiceBookingData, isDepositOnl
 
   const formattedEnquiryDate = booking.enquiryDate
     ? new Date(booking.enquiryDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-    : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    : '';
 
   return {
     adults,
@@ -154,7 +178,6 @@ export function getInvoiceCalculations(booking: InvoiceBookingData, isDepositOnl
     isDepositPaid,
     finalPaymentAmt,
     isFinalPaid,
-    isExtraPaid,
     totalPaid,
     balanceDue,
     formattedDate,
@@ -272,16 +295,23 @@ export function generateInvoicePDFDoc(
   const pricePerPerson = bookingData.pricePerPerson || 0;
   const kidsPrice = bookingData.kidsPricePerPerson || 0;
 
-  const itemRows: (string | number)[][] = [
-    [
+  const itemRows: (string | number)[][] = [];
+
+  const isVenueOnly = packageName.toLowerCase().includes('venue hire only') || 
+                      packageName.toLowerCase().includes('hall hire only') ||
+                      packageName.toLowerCase().includes('no package') ||
+                      packageName.toLowerCase().includes('no food package');
+
+  if (calc.baseAmount > 0 || !isVenueOnly) {
+    itemRows.push([
       `Catering Package: ${packageName}\n• Adults: ${calc.adults} × £${pricePerPerson.toFixed(2)}\n• Kids (4-10 yrs): ${calc.kids4to10} × £${kidsPrice.toFixed(2)}\n• Kids (<4 yrs): ${calc.kidsUnder4} × Free`,
       `£${calc.baseAmount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-    ],
-  ];
+    ]);
+  }
 
   if (calc.hallCharge && calc.hallCharge.amount > 0) {
     itemRows.push([
-      `🏛️ ${calc.hallCharge.label || 'Venue Hall Hire'}`,
+      `🏛️ Venue / Hall Hire: ${calc.hallCharge.label || 'Venue Hall Hire'}`,
       `£${calc.hallCharge.amount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     ]);
   }
@@ -357,13 +387,6 @@ export function generateInvoicePDFDoc(
       `Final Payment (${finalStatus}):`,
       `${calc.isFinalPaid ? '-' : ''}£${calc.finalPaymentAmt.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`,
     ]);
-
-    if (calc.extraChargesTotal > 0) {
-      summaryRows.push([
-        `Extra Charges Payment (${calc.isExtraPaid ? 'Paid ✓' : 'Pending'}):`,
-        `${calc.isExtraPaid ? '-' : ''}£${calc.extraChargesTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`,
-      ]);
-    }
 
     summaryRows.push([
       'Total Amount Paid to Date:',
@@ -507,13 +530,15 @@ export function downloadInvoicePDFFile(
 export function buildInvoiceHTML(
   bookingData: InvoiceBookingData,
   isDepositOnly: boolean = false,
-  config?: InvoiceConfig
+  config?: InvoiceConfig,
+  blobUrl?: string
 ): string {
   const bank = config?.bankDetails || DEFAULT_BANK_DETAILS;
   const venue = config?.venueDetails || DEFAULT_VENUE_DETAILS;
   const calc = getInvoiceCalculations(bookingData, isDepositOnly);
 
   const cleanName = (bookingData.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+  const packageName = (bookingData.selectedMenu || bookingData.package || '').toLowerCase();
   const typeTag = isDepositOnly ? 'Deposit' : 'Invoice';
   const filename = `Honeymoon_${typeTag}_#${bookingData.id}_${cleanName}.pdf`;
 
@@ -787,7 +812,7 @@ export function buildInvoiceHTML(
     </div>
     <div class="bar-actions">
       <button class="btn btn-dark" onclick="if(window.opener){window.close();}else{history.back();}">✕ Close</button>
-      <button class="btn btn-gold" id="btn-download-pdf">⬇️ Download PDF File</button>
+      ${blobUrl ? `<a href="${blobUrl}" download="${filename}" class="btn btn-gold" id="btn-download-pdf" style="text-decoration:none;">⬇️ Download PDF File</a>` : `<button class="btn btn-gold" id="btn-download-pdf">⬇️ Download PDF File</button>`}
       <button class="btn btn-green" onclick="window.print()">🖨️ Print Invoice</button>
     </div>
   </div>
@@ -856,6 +881,7 @@ export function buildInvoiceHTML(
       </tr>
     </thead>
     <tbody>
+      ${(calc.baseAmount > 0 || !(packageName.toLowerCase().includes('venue hire only') || packageName.toLowerCase().includes('hall hire only') || packageName.toLowerCase().includes('no package') || packageName.toLowerCase().includes('no food package'))) ? `
       <tr>
         <td>
           <strong>Catering Package: ${bookingData.selectedMenu || bookingData.package || 'Custom Banquet'}</strong>
@@ -869,11 +895,12 @@ export function buildInvoiceHTML(
           &pound;${calc.baseAmount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </td>
       </tr>
+      ` : ''}
       ${
         calc.hallCharge && calc.hallCharge.amount > 0
           ? `
       <tr>
-        <td>🏛️ ${calc.hallCharge.label || 'Venue Hall Hire'}</td>
+        <td>🏛️ Venue / Hall Hire: ${calc.hallCharge.label || 'Venue Hall Hire'}</td>
         <td class="text-right" style="font-weight:700;">&pound;${calc.hallCharge.amount.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
       </tr>
       `
@@ -947,18 +974,6 @@ export function buildInvoiceHTML(
             ${calc.isFinalPaid ? `-£${calc.finalPaymentAmt.toLocaleString('en-GB', { minimumFractionDigits: 2 })} (Paid)` : `£${calc.finalPaymentAmt.toLocaleString('en-GB', { minimumFractionDigits: 2 })} (Pending)`}
           </td>
         </tr>
-        ${
-          calc.extraChargesTotal > 0
-            ? `
-        <tr>
-          <td style="color:#4B5563;">&bull; Extra Charges Payment:</td>
-          <td class="text-right" style="color: ${calc.isExtraPaid ? '#059669' : '#D97706'}; font-weight:600;">
-            ${calc.isExtraPaid ? `-£${calc.extraChargesTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })} (Paid)` : `£${calc.extraChargesTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })} (Pending)`}
-          </td>
-        </tr>
-        `
-            : ''
-        }
         <tr style="border-top:1px solid #E5E7EB;">
           <td style="font-weight:700; color:#111827; padding-top:8px;">Total Paid:</td>
           <td class="text-right" style="font-weight:700; color:#059669; padding-top:8px;">
@@ -1041,7 +1056,15 @@ export function openInvoicePrintWindow(
   isDepositOnly: boolean = false,
   config?: InvoiceConfig
 ): Window | null {
-  const htmlContent = buildInvoiceHTML(bookingData, isDepositOnly, config);
+  let blobUrl = '';
+  try {
+    const { blob } = generateInvoicePDFBlob(bookingData, isDepositOnly, config);
+    blobUrl = URL.createObjectURL(blob);
+  } catch (e) {
+    console.error('Failed to create preview PDF blob:', e);
+  }
+
+  const htmlContent = buildInvoiceHTML(bookingData, isDepositOnly, config, blobUrl);
   const printWindow = window.open('', '_blank');
 
   if (!printWindow) {
@@ -1075,7 +1098,7 @@ export function getPublicInvoiceBaseUrl(config?: InvoiceConfig): string {
   }
 
   // Default to live production domain so customers on WhatsApp can open their invoice from anywhere
-  return 'https://honeymoonevents.co.uk';
+  return 'https://honeymoonevents.com';
 }
 
 // ─── CRYPTOGRAPHIC ACCESS TOKEN (PREVENTS URL TAMPERING & ID GUESSING) ───────
@@ -1188,22 +1211,22 @@ export function buildInvoiceWhatsAppMessage(
   isDepositOnly: boolean = false,
   config?: InvoiceConfig
 ): string {
-  const bank = config?.bankDetails || DEFAULT_BANK_DETAILS;
-  const calc = getInvoiceCalculations(bookingData, isDepositOnly);
-  const firstName = (bookingData.name || 'Client').split(' ')[0];
-
   const origin = getPublicInvoiceBaseUrl(config);
   const token = generateInvoiceAccessToken(bookingData.id, bookingData.phone, bookingData.createdAt || bookingData.enquiryDate);
   const invoiceOnlineLink = `${origin}/invoice?id=${bookingData.id}&token=${token}${isDepositOnly ? '&type=deposit' : ''}`;
 
-  let msg = `Hi ${firstName}, thank you for choosing *Honeymoon Events* for your ${bookingData.eventType || 'Event'}! 🎉\n\n`;
-
-  if (isDepositOnly) {
-    msg += `📄 *DEPOSIT INVOICE & ORDER SUMMARY*\n`;
-  } else {
-    msg += `📄 *OFFICIAL INVOICE & ORDER SUMMARY*\n`;
+  if (!isDepositOnly) {
+    return `Please find attached your final invoice:
+${invoiceOnlineLink}`;
   }
 
+  const bank = config?.bankDetails || DEFAULT_BANK_DETAILS;
+  const calc = getInvoiceCalculations(bookingData, isDepositOnly);
+  const firstName = (bookingData.name || 'Client').split(' ')[0];
+
+  let msg = `Hi ${firstName}, thank you for choosing *Honeymoon Events* for your ${bookingData.eventType || 'Event'}! 🎉\n\n`;
+
+  msg += `📄 *DEPOSIT INVOICE & ORDER SUMMARY*\n`;
   msg += `*Ref:* #${bookingData.id}\n`;
   msg += `*Event Date:* ${calc.formattedDate} (${bookingData.time || 'TBC'})\n`;
   msg += `*Guests:* ${calc.totalGuests} Guests (${calc.adults} Adults, ${calc.kids4to10} Kids)\n`;
@@ -1212,17 +1235,7 @@ export function buildInvoiceWhatsAppMessage(
   msg += `💰 *FINANCIAL BREAKDOWN:*\n`;
   msg += `• Grand Total: *£${calc.grandTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })}*\n`;
   msg += `• Deposit (${calc.isDepositPaid ? 'Paid ✓' : 'Pending'}): £${calc.deposit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}\n`;
-
-  if (!isDepositOnly) {
-    msg += `• Total Paid to Date: *£${calc.totalPaid.toLocaleString('en-GB', { minimumFractionDigits: 2 })}*\n`;
-    if (calc.balanceDue <= 0) {
-      msg += `• Status: *PAID IN FULL ✅*\n\n`;
-    } else {
-      msg += `• Remaining Balance Due: *£${calc.balanceDue.toLocaleString('en-GB', { minimumFractionDigits: 2 })}*\n\n`;
-    }
-  } else {
-    msg += `• Balance After Deposit: *£${calc.balanceDue.toLocaleString('en-GB', { minimumFractionDigits: 2 })}*\n\n`;
-  }
+  msg += `• Balance After Deposit: *£${calc.balanceDue.toLocaleString('en-GB', { minimumFractionDigits: 2 })}*\n\n`;
 
   if (calc.balanceDue > 0) {
     msg += `🏦 *Bank Transfer Details:*\n`;
@@ -1251,37 +1264,21 @@ export function cleanPhoneNumber(phone?: string): string {
 export async function shareInvoicePDFViaWhatsApp(
   bookingData: InvoiceBookingData,
   isDepositOnly: boolean = false,
-  config?: InvoiceConfig
-): Promise<{ shared: boolean; method: 'native_share' | 'whatsapp_link' | 'download_only'; error?: string }> {
-  const { file, filename } = generateInvoicePDFBlob(bookingData, isDepositOnly, config);
-  const textMessage = buildInvoiceWhatsAppMessage(bookingData, isDepositOnly, config);
-  const cleanPhone = cleanPhoneNumber(bookingData.phone);
-
-  // 1. Try Native Web Share API with attached PDF file (iOS Safari / Android)
-  if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({
-        files: [file],
-        title: filename,
-        text: textMessage,
-      });
-      return { shared: true, method: 'native_share' };
-    } catch (err: any) {
-      // If user cancelled the share sheet, return gracefully
-      if (err.name === 'AbortError') {
-        return { shared: false, method: 'native_share', error: 'User cancelled share' };
-      }
-      console.warn('Native file share failed, falling back to WhatsApp link:', err);
-    }
-  }
-
-  // 2. Fallback: Automatically download the PDF file to user device AND open WhatsApp chat
+  config?: InvoiceConfig,
+  customMessage?: string
+): Promise<{ shared: boolean; method: 'whatsapp_link' | 'download_only'; error?: string }> {
+  // 1. Download the official PDF file to device so the user has the actual document file
   downloadInvoicePDFFile(bookingData, isDepositOnly, config);
+
+  // 2. Build the clean, permanent WhatsApp message with clickable HTTPS link
+  const textMessage = customMessage || buildInvoiceWhatsAppMessage(bookingData, isDepositOnly, config);
+  const cleanPhone = cleanPhoneNumber(bookingData.phone);
 
   const waUrl = cleanPhone
     ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(textMessage)}`
     : `https://wa.me/?text=${encodeURIComponent(textMessage)}`;
 
+  // 3. Open WhatsApp chat directly (never passes raw files to avoid the browser mangling into blob: URLs)
   window.open(waUrl, '_blank', 'noopener,noreferrer');
   return { shared: true, method: 'whatsapp_link' };
 }
