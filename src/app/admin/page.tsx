@@ -16,6 +16,7 @@ import {
   openInvoicePrintWindow,
   shareInvoicePDFViaWhatsApp,
   buildInvoiceWhatsAppMessage,
+  getInvoiceCalculations,
   cleanPhoneNumber,
   InvoiceBookingData,
 } from '@/utils/invoicePDF';
@@ -951,23 +952,18 @@ export default function AdminPage() {
   };
 
   const buildCompletedWhatsAppText = (booking: Booking) => {
-    const total = getTotalAmount(booking).toLocaleString();
-    const deposit = booking.deposit.toLocaleString();
-    const extraChargesTotal = (booking.extraCharges || []).reduce((s, c) => s + c.amount, 0);
-    const finalPaymentPaidAmt = getTotalAmount(booking) - booking.deposit - extraChargesTotal;
+    const calc = getInvoiceCalculations({
+      ...booking,
+      venueHallCharge: getBookingHallCharge(booking),
+    });
 
     let discountText = '';
-    if (booking.discount) {
-      discountText = `\n• Discount (${booking.discount.reason}): -£${getDiscountAmount(booking).toLocaleString()}`;
+    if (booking.discount && calc.discountAmount > 0) {
+      discountText = `\n• Discount (${booking.discount.reason}): -£${calc.discountAmount.toLocaleString()}`;
     }
 
     const hallCharge = getBookingHallCharge(booking);
     const hallText = hallCharge ? `\n• ${hallCharge.label}: £${hallCharge.amount.toLocaleString()}` : '';
-
-    let extrasText = '';
-    if (extraChargesTotal > 0) {
-      extrasText = '\n\n*➕ Additional Adjustments:*\n' + booking.extraCharges.map(c => `• ${c.label}: +£${c.amount.toLocaleString()}`).join('\n');
-    }
 
     const adults = booking.adults ?? booking.guests;
     const kids4to10 = booking.kids4to10 || 0;
@@ -987,17 +983,17 @@ Thank you so much for booking with Honeymoon Events! 🎊 Your event was a succe
 
 *👥 Guest Breakdown:*
 ${guestBreakdown}
-• Total Guests: ${adults + kids4to10 + kidsUnder4}${extrasText}
+• Total Guests: ${adults + kids4to10 + kidsUnder4}
 
 *💰 Final Invoice Details:*
-• Base Amount: £${booking.baseAmount.toLocaleString()}${discountText}${hallText}
-• Grand Total: £${total}
+• Subtotal: £${(calc.baseAmount + calc.hallAmount + calc.extraChargesTotal).toLocaleString()}${discountText}${hallText}
+• Grand Total: £${calc.grandTotal.toLocaleString()}
 
-*💳 Payments Received:*
-• Deposit: £${deposit}
-• Main Balance Paid: £${finalPaymentPaidAmt.toLocaleString()}
-${extraChargesTotal > 0 ? `• Extra Charges Paid: £${extraChargesTotal.toLocaleString()}\n` : ''}
-• Status: *Paid in Full ✅*
+*💳 Payment Breakdown:*
+• Deposit: £${calc.deposit.toLocaleString()} (${calc.isDepositPaid ? 'Paid' : 'Pending'})
+• Main Balance: £${calc.finalPaymentAmt.toLocaleString()} (${calc.isFinalPaid ? 'Paid' : 'Pending'})
+• Total Paid: £${calc.totalPaid.toLocaleString()}
+• Remaining Balance: ${calc.balanceDue <= 0 ? '*PAID IN FULL ✅*' : `*£${calc.balanceDue.toLocaleString()} due*`}
 
 It was an absolute pleasure serving you. We hope you and your guests had a wonderful time! We'd love to host your future events. 🙏✨`;
   };
@@ -1028,28 +1024,18 @@ It was an absolute pleasure serving you. We hope you and your guests had a wonde
 
     const guestBreakdown = `*👥 Guest Breakdown:*\n• Adults: ${adults} × £${pricePerPerson}/person = £${(adults * pricePerPerson).toLocaleString()}\n• Kids (4-10 yrs): ${kids4to10} × £${kidsPrice}/person = £${(kids4to10 * kidsPrice).toLocaleString()}\n• Kids (0-4 yrs): ${kidsUnder4} × Free = £0\n• Total Guests: ${adults + kids4to10 + kidsUnder4}`;
 
-    const grandTotal = getTotalAmount(booking);
-    const extraChargesTotal = (booking.extraCharges || []).reduce((s, c) => s + c.amount, 0);
-    const finalPaymentPaidAmt = grandTotal - booking.deposit - extraChargesTotal;
-    
-    const isDepositPaid = booking.depositPaid || !['new_enquiry', 'menu_sent', 'menu_selected', 'deposit_pending'].includes(booking.status);
-    const isFinalPaid = booking.finalPaymentPaid;
-    const isExtraPaid = booking.status === 'completed' || !!booking.paymentProofExtra || booking.finalPaymentPaid;
-    
-    const totalPaid = (isDepositPaid ? booking.deposit : 0) +
-                      (isFinalPaid ? finalPaymentPaidAmt : 0) +
-                      (isExtraPaid ? extraChargesTotal : 0);
-                      
-    const remainingBalance = grandTotal - totalPaid;
+    const calc = getInvoiceCalculations({
+      ...booking,
+      venueHallCharge: getBookingHallCharge(booking),
+    });
     
     const breakdownText = `*💳 Payment Breakdown:*\n` +
-      `• Deposit Paid: £${booking.deposit.toLocaleString()} (${isDepositPaid ? (booking.paymentMethodDeposit ? `Paid via ${booking.paymentMethodDeposit.replace('Paid by ', '')}` : 'Paid') : 'Pending'})\n` +
-      `• Final Payment (Main Balance): £${finalPaymentPaidAmt.toLocaleString()} (${isFinalPaid ? (booking.paymentMethodFinal ? `Paid via ${booking.paymentMethodFinal.replace('Paid by ', '')}` : 'Paid') : 'Pending'})\n` +
-      (extraChargesTotal > 0 ? `• Extras / Adjustments: £${extraChargesTotal.toLocaleString()} (${isExtraPaid ? 'Paid' : 'Pending'})\n` : '') +
-      `• Total Paid: £${totalPaid.toLocaleString()}\n` +
-      `• *Remaining Balance Due: ${remainingBalance <= 0 ? 'PAID IN FULL ✓' : `£${remainingBalance.toLocaleString()}`}*`;
+      `• Deposit: £${calc.deposit.toLocaleString()} (${calc.isDepositPaid ? (booking.paymentMethodDeposit ? `Paid via ${booking.paymentMethodDeposit.replace('Paid by ', '')}` : 'Paid') : 'Pending'})\n` +
+      `• Final Payment (Main Balance): £${calc.finalPaymentAmt.toLocaleString()} (${calc.isFinalPaid ? (booking.paymentMethodFinal ? `Paid via ${booking.paymentMethodFinal.replace('Paid by ', '')}` : 'Paid') : 'Pending'})\n` +
+      `• Total Paid: £${calc.totalPaid.toLocaleString()}\n` +
+      `• *Remaining Balance Due: ${calc.balanceDue <= 0 ? 'PAID IN FULL ✓' : `£${calc.balanceDue.toLocaleString()}`}*`;
 
-    return `Hi ${booking.name.split(' ')[0]}, thank you for choosing Honeymoon Events for your ${booking.eventType}! 🎉\n\nHere is your final invoice summary:\n\n*📋 Booking Ref:* ${booking.id}\n*📦 Package:* ${booking.selectedMenu || booking.package}\n\n${guestBreakdown}\n\n*💰 Base Amount:* £${booking.baseAmount.toLocaleString()}${extrasText}${discountText}${hallText}\n\n${breakdownText}${dueDateText}\n\nPlease transfer the balance to:\n🏦 Account Name: ${bank.accountName}\n📋 Sort Code: ${bank.sortCode}\n🔢 Account No: ${bank.accountNumber}\n📌 Reference: ${booking.id}\n\nOnce paid, please send a screenshot of the transfer confirmation here. Thank you!`;
+    return `Hi ${booking.name.split(' ')[0]}, thank you for choosing Honeymoon Events for your ${booking.eventType}! 🎉\n\nHere is your final invoice summary:\n\n*📋 Booking Ref:* ${booking.id}\n*📦 Package:* ${booking.selectedMenu || booking.package}\n\n${guestBreakdown}\n\n*💰 Subtotal:* £${(calc.baseAmount + calc.hallAmount + calc.extraChargesTotal).toLocaleString()}${extrasText}${discountText}${hallText}\n*Grand Total:* £${calc.grandTotal.toLocaleString()}\n\n${breakdownText}${dueDateText}\n\n${calc.balanceDue > 0 ? `Please transfer the outstanding balance to:\n🏦 Account Name: ${bank.accountName}\n📋 Sort Code: ${bank.sortCode}\n🔢 Account No: ${bank.accountNumber}\n📌 Reference: ${booking.id}\n\nOnce paid, please send a screenshot of the transfer confirmation here. Thank you!` : 'Thank you, your invoice is paid in full.'}`;
   };
 
   const buildExtraInvoiceWhatsAppText = (booking: Booking, bank: typeof bankDetails) => {

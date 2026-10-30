@@ -1235,6 +1235,8 @@ export default function ManualBookingForm({
           value: parseFloat(discountValue) || 0,
           reason: discountReason.trim() || 'Special promotion',
         };
+      } else {
+        bookingRecord.discount = null;
       }
 
       // Deep clean to ensure absolutely no undefined values reach Firestore
