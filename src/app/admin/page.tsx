@@ -88,6 +88,10 @@ interface Booking {
   pricePerPerson?: number;
   kidsPricePerPerson?: number;
   kidsUnder4PricePerPerson?: number;
+  securityDeposit?: number;
+  securityDepositRefunded?: boolean;
+  securityDepositRefundedAt?: string;
+  securityDepositRefundMethod?: string;
   priceOverrides?: Record<string, any>;
   customPriceReasons?: string[];
   includeVenueHall?: boolean;
@@ -401,6 +405,8 @@ export default function AdminPage() {
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
   const [isEditingDeposit, setIsEditingDeposit] = useState(false);
   const [editDepositValue, setEditDepositValue] = useState<string>('');
+  const [isEditingSecDeposit, setIsEditingSecDeposit] = useState(false);
+  const [editSecDepositValue, setEditSecDepositValue] = useState<string>('');
   const [discountTab, setDiscountTab] = useState<'pending' | 'history'>('pending');
   const [trackingBookingId, setTrackingBookingId] = useState<string>('');
   const [trackerSearch, setTrackerSearch] = useState<string>('');
@@ -470,6 +476,7 @@ export default function AdminPage() {
 
   const resetAllEditStates = () => {
     setIsEditingDeposit(false);
+    setIsEditingSecDeposit(false);
     setIsEditingCustomerName(false);
     setIsEditingCustomerPhone(false);
     setIsEditingCustomerEmail(false);
@@ -543,6 +550,12 @@ export default function AdminPage() {
           pricePerPerson: data.pricePerPerson,
           kidsPricePerPerson: data.kidsPricePerPerson,
           kidsUnder4PricePerPerson: data.kidsUnder4PricePerPerson,
+          securityDeposit: data.securityDeposit !== undefined ? Number(data.securityDeposit) : (
+            (data.extraCharges || []).find((e: any) => e.label.toLowerCase().includes('security deposit'))?.amount || 0
+          ),
+          securityDepositRefunded: data.securityDepositRefunded || false,
+          securityDepositRefundedAt: data.securityDepositRefundedAt,
+          securityDepositRefundMethod: data.securityDepositRefundMethod,
           priceOverrides: data.priceOverrides,
           customPriceReasons: data.customPriceReasons,
           includeVenueHall: data.includeVenueHall,
@@ -1029,11 +1042,14 @@ It was an absolute pleasure serving you. We hope you and your guests had a wonde
       venueHallCharge: getBookingHallCharge(booking),
     });
     
+    const secDepositText = calc.securityDeposit > 0 ? `\n• Security Deposit: £${calc.securityDeposit.toLocaleString()} (${calc.isSecurityDepositRefunded ? 'Refunded to Client ✓' : '100% Refundable'})` : '';
+    const secRefundText = (calc.securityDeposit > 0 && calc.isSecurityDepositRefunded) ? `\n• Security Deposit Refunded: -£${calc.securityDeposit.toLocaleString()}\n• Net Settled Total: £${calc.servicesTotal.toLocaleString()}` : '';
+
     const breakdownText = `*💳 Payment Breakdown:*\n` +
       `• Deposit: £${calc.deposit.toLocaleString()} (${calc.isDepositPaid ? (booking.paymentMethodDeposit ? `Paid via ${booking.paymentMethodDeposit.replace('Paid by ', '')}` : 'Paid') : 'Pending'})\n` +
-      `• Final Payment (Main Balance): £${calc.finalPaymentAmt.toLocaleString()} (${calc.isFinalPaid ? (booking.paymentMethodFinal ? `Paid via ${booking.paymentMethodFinal.replace('Paid by ', '')}` : 'Paid') : 'Pending'})\n` +
-      `• Total Paid: £${calc.totalPaid.toLocaleString()}\n` +
-      `• *Remaining Balance Due: ${calc.balanceDue <= 0 ? 'PAID IN FULL ✓' : `£${calc.balanceDue.toLocaleString()}`}*`;
+      `• Final Payment (Main Balance): £${calc.finalPaymentAmt.toLocaleString()} (${calc.isFinalPaid ? (booking.paymentMethodFinal ? `Paid via ${booking.paymentMethodFinal.replace('Paid by ', '')}` : 'Paid') : 'Pending'})${secDepositText}\n` +
+      `• Total Paid: £${calc.totalPaid.toLocaleString()}${secRefundText}\n` +
+      `• *Remaining Balance Due: ${calc.balanceDue <= 0 ? (calc.securityDeposit > 0 && calc.isSecurityDepositRefunded ? 'PAID IN FULL ✓ (Deposit Refunded)' : 'PAID IN FULL ✓') : `£${calc.balanceDue.toLocaleString()}`}*`;
 
     return `Hi ${booking.name.split(' ')[0]}, thank you for choosing Honeymoon Events for your ${booking.eventType}! 🎉\n\nHere is your final invoice summary:\n\n*📋 Booking Ref:* ${booking.id}\n*📦 Package:* ${booking.selectedMenu || booking.package}\n\n${guestBreakdown}\n\n*💰 Subtotal:* £${(calc.baseAmount + calc.hallAmount + calc.extraChargesTotal).toLocaleString()}${extrasText}${discountText}${hallText}\n*Grand Total:* £${calc.grandTotal.toLocaleString()}\n\n${breakdownText}${dueDateText}\n\n${calc.balanceDue > 0 ? `Please transfer the outstanding balance to:\n🏦 Account Name: ${bank.accountName}\n📋 Sort Code: ${bank.sortCode}\n🔢 Account No: ${bank.accountNumber}\n📌 Reference: ${booking.id}\n\nOnce paid, please send a screenshot of the transfer confirmation here. Thank you!` : 'Thank you, your invoice is paid in full.'}`;
   };
@@ -1098,16 +1114,23 @@ Once you have completed the transfer, please send us a screenshot of the payment
   };
 
   const updateStatus = async (id: string, status: BookingStatus) => {
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
-    setSelectedBooking(prev => prev?.id === id ? { ...prev, status } : prev);
+    const extraUpdates: any = {};
+    if (status === 'completed' || status === 'final_payment_received') {
+      extraUpdates.securityDepositRefunded = true;
+      extraUpdates.securityDepositRefundedAt = new Date().toISOString();
+    }
+
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, status, ...extraUpdates } : b));
+    setSelectedBooking(prev => prev?.id === id ? { ...prev, status, ...extraUpdates } : prev);
     try {
-      await setDoc(doc(db, 'booking_requests', id), { status }, { merge: true });
+      await setDoc(doc(db, 'booking_requests', id), { status, ...extraUpdates }, { merge: true });
       if (status !== 'new_enquiry') {
         const currentBooking = bookings.find(b => b.id === id);
         if (currentBooking) {
           const bookingData = {
             ...currentBooking,
             status,
+            ...extraUpdates,
             updatedAt: new Date().toISOString()
           };
           const cleanBookingData = Object.fromEntries(
@@ -1383,14 +1406,19 @@ Once you have completed the transfer, please send us a screenshot of the payment
   const confirmFinalPayment = async (id: string, method: string) => {
     const currentBooking = bookings.find(b => b.id === id);
     const nowIso = new Date().toISOString();
+    const extraRefund: any = (currentBooking?.securityDeposit && currentBooking.securityDeposit > 0) ? {
+      securityDepositRefunded: true,
+      securityDepositRefundedAt: nowIso,
+    } : {};
     
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, finalPaymentPaid: true, status: 'completed', paymentMethodFinal: method } : b));
-    setSelectedBooking(prev => prev?.id === id ? { ...prev, finalPaymentPaid: true, status: 'completed', paymentMethodFinal: method } : prev);
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, finalPaymentPaid: true, status: 'completed', paymentMethodFinal: method, ...extraRefund } : b));
+    setSelectedBooking(prev => prev?.id === id ? { ...prev, finalPaymentPaid: true, status: 'completed', paymentMethodFinal: method, ...extraRefund } : prev);
     try {
       await setDoc(doc(db, 'booking_requests', id), { 
         finalPaymentPaid: true, 
         status: 'completed', 
         paymentMethodFinal: method,
+        ...extraRefund,
         orderClosedAt: nowIso,
         updatedAt: nowIso,
       }, { merge: true });
@@ -1400,6 +1428,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
           finalPaymentPaid: true,
           status: 'completed',
           paymentMethodFinal: method,
+          ...extraRefund,
           orderClosedAt: nowIso,
           updatedAt: nowIso,
         };
@@ -1409,7 +1438,7 @@ Once you have completed the transfer, please send us a screenshot of the payment
         await setDoc(doc(db, 'bookings', id), cleanBookingData, { merge: true });
       }
       setCustomAlert({
-        message: `Final payment via ${method} confirmed successfully! Order #${id} is now closed and marked as completed.`,
+        message: `Final payment via ${method} confirmed successfully! Order #${id} is now closed and security deposit refunded.`,
         type: 'success'
       });
     } catch (error: any) {
@@ -2323,11 +2352,13 @@ Warm regards,
       e.label.toLowerCase().includes('dry hire') ||
       e.label.toLowerCase().includes('venue hire')
     );
-    if (hasHallInExtras) {
-      return food;
+    let total = hasHallInExtras ? food : (food + (getBookingHallCharge(b)?.amount || 0));
+
+    const hasSecurityDepositInExtras = (b.extraCharges || []).some(e => e.label.toLowerCase().includes('security deposit'));
+    if (!hasSecurityDepositInExtras && b.securityDeposit && b.securityDeposit > 0) {
+      total += b.securityDeposit;
     }
-    const hall = getBookingHallCharge(b);
-    return food + (hall?.amount || 0);
+    return total;
   };
 
   const downloadInvoicePDF = (bookingData: Booking, isDepositOnly: boolean = false) => {
@@ -2386,6 +2417,28 @@ Warm regards,
       };
     }
   }, [bookings, bankDetails, venueDetails]);
+
+  const handleToggleSecurityDepositRefund = async (booking: Booking, targetState?: boolean) => {
+    const newState = targetState !== undefined ? targetState : !booking.securityDepositRefunded;
+    const updateData: any = {
+      securityDepositRefunded: newState,
+      securityDepositRefundedAt: newState ? new Date().toISOString() : null,
+      updatedAt: new Date().toISOString(),
+    };
+    setSelectedBooking(prev => prev ? ({ ...prev, ...updateData }) : null);
+    setBookings(prev => prev.map(b => b.id === booking.id ? ({ ...b, ...updateData }) : b));
+    try {
+      await setDoc(doc(db, 'booking_requests', booking.id), updateData, { merge: true });
+      await setDoc(doc(db, 'bookings', booking.id), updateData, { merge: true });
+      setCustomAlert({
+        message: newState ? 'Security deposit marked as Refunded ✓' : 'Security deposit marked as Pending / Refundable',
+        type: 'success',
+      });
+    } catch (err) {
+      console.error('Error updating security deposit refund status:', err);
+      setCustomAlert({ message: 'Failed to update refund status', type: 'error' });
+    }
+  };
 
   const getInitialWhatsAppMsg = (b: Booking, type: 'final' | 'deposit', phoneVal?: string) => {
     const pkgName = b.selectedMenu || b.package;
@@ -3140,6 +3193,17 @@ Warm regards,
                                   <td className="px-4 py-3.5">
                                     <div className="text-sm font-bold text-gray-900">£{total.toLocaleString()}</div>
                                     <div className="text-[10px] text-gray-400">{booking.guests} {booking.guests === 1 ? 'Guest' : 'Guests'}</div>
+                                    {booking.securityDeposit && booking.securityDeposit > 0 ? (
+                                      <div className="mt-1">
+                                        <span className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                          booking.securityDepositRefunded || booking.status === 'completed'
+                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                        }`}>
+                                          🛡️ £{booking.securityDeposit.toLocaleString()} {booking.securityDepositRefunded || booking.status === 'completed' ? 'Refunded ✓' : 'Refundable'}
+                                        </span>
+                                      </div>
+                                    ) : null}
                                   </td>
 
                                   {/* Deposit Paid */}
@@ -3162,7 +3226,7 @@ Warm regards,
                                   <td className="px-4 py-3.5">
                                     {isFinalPaid || balanceDue <= 0 ? (
                                       <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                        <span>✓</span> Paid in Full
+                                        <span>✓</span> {booking.securityDeposit && booking.securityDeposit > 0 ? 'Paid in Full • Deposit Refunded' : 'Paid in Full'}
                                       </span>
                                     ) : (
                                       <div>
@@ -4037,18 +4101,67 @@ Warm regards,
 
                   {/* Dry Hire Prices */}
                   <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                      <Icon name="BuildingOfficeIcon" size={16} style={{ color: '#C8860A' }} />
-                      Dry Hire Prices
-                    </h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                        <Icon name="BuildingOfficeIcon" size={16} style={{ color: '#C8860A' }} />
+                        Dry Hire Prices
+                      </h3>
+                      <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                        Dynamic Security Deposit Supported
+                      </span>
+                    </div>
+
+                    <div className="hidden sm:grid grid-cols-12 gap-3 mb-1 px-1 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                      <div className="col-span-4">Day / Period</div>
+                      <div className="col-span-3">Session</div>
+                      <div className="col-span-2">Hire Fee (£)</div>
+                      <div className="col-span-3">Security Deposit (£)</div>
+                    </div>
+
                     <div className="space-y-2">
                       {editableDryHirePrices.map((row, i) => (
-                        <div key={i} className="flex items-center gap-3 flex-wrap">
-                          <input type="text" value={row.day} onChange={(e) => setEditableDryHirePrices(prev => prev.map((r, idx) => idx === i ? { ...r, day: e.target.value } : r))} className="flex-1 min-w-[160px] border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" placeholder="Day" />
-                          <input type="text" value={row.session} onChange={(e) => setEditableDryHirePrices(prev => prev.map((r, idx) => idx === i ? { ...r, session: e.target.value } : r))} className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" placeholder="Session" />
-                          <input type="number" value={row.price} onChange={(e) => setEditableDryHirePrices(prev => prev.map((r, idx) => idx === i ? { ...r, price: Number(e.target.value) } : r))} className="flex-1 min-w-[120px] border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none font-semibold" style={{ color: '#C8860A' }} placeholder="Price (£)" />
+                        <div key={i} className="flex flex-col sm:grid sm:grid-cols-12 items-center gap-2 sm:gap-3 bg-gray-50/50 p-2 sm:p-0 rounded-lg sm:bg-transparent">
+                          <input
+                            type="text"
+                            value={row.day}
+                            onChange={(e) => setEditableDryHirePrices(prev => prev.map((r, idx) => idx === i ? { ...r, day: e.target.value } : r))}
+                            className="w-full sm:col-span-4 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
+                            placeholder="Day / Period"
+                          />
+                          <input
+                            type="text"
+                            value={row.session}
+                            onChange={(e) => setEditableDryHirePrices(prev => prev.map((r, idx) => idx === i ? { ...r, session: e.target.value } : r))}
+                            className="w-full sm:col-span-3 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
+                            placeholder="Session"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            value={row.price}
+                            onChange={(e) => setEditableDryHirePrices(prev => prev.map((r, idx) => idx === i ? { ...r, price: Number(e.target.value) } : r))}
+                            className="w-full sm:col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none font-semibold bg-white"
+                            style={{ color: '#C8860A' }}
+                            placeholder="Price (£)"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            value={(row as any).securityDeposit ?? 500}
+                            onChange={(e) => setEditableDryHirePrices(prev => prev.map((r, idx) => idx === i ? { ...r, securityDeposit: Number(e.target.value) } : r))}
+                            className="w-full sm:col-span-3 border border-emerald-300 rounded-lg px-3 py-2 text-sm focus:outline-none font-bold text-emerald-800 bg-white"
+                            placeholder="Security Deposit (£)"
+                          />
                         </div>
                       ))}
+                    </div>
+
+                    {/* Notice below dry hire section */}
+                    <div className="mt-4 p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-800 font-medium">
+                      <span className="text-base flex-shrink-0">🛡️</span>
+                      <span>
+                        <strong>Refund Policy Notice:</strong> This security deposit amount is completely refundable. It will be collected at booking/invoicing and refunded back to the customer post-event once final inspection is completed.
+                      </span>
                     </div>
                   </div>
 
@@ -4359,6 +4472,11 @@ Warm regards,
                               <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[b.status]}`} />
                               {STATUS_LABELS[b.status]}
                             </span>
+                            {b.securityDeposit && b.securityDeposit > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                                <span>🛡️</span> £{b.securityDeposit.toLocaleString()} Deposit Refunded ✓
+                              </span>
+                            ) : null}
                             <div className="flex gap-1.5 flex-wrap">
                               {/* 0. Amend in Wizard */}
                               <button
@@ -4448,8 +4566,21 @@ Warm regards,
                             {b.discount && (
                               <div><span className="text-gray-500">Discount: </span><span className="font-semibold text-red-600">-£{getDiscountAmount(b).toLocaleString()}</span></div>
                             )}
-                            <div><span className="text-gray-500">Total: </span><span className="font-bold" style={{ color: '#C8860A' }}>£{getTotalAmount(b).toLocaleString()}</span></div>
-                            <div className="flex items-center gap-1"><Icon name="CheckCircleIcon" size={14} className="text-emerald-500" /><span className="text-emerald-700 font-medium text-xs">Fully Paid</span></div>
+                            {b.securityDeposit && b.securityDeposit > 0 ? (
+                              <>
+                                <div><span className="text-gray-500">Gross Total: </span><span className="font-bold text-gray-900">£{getTotalAmount(b).toLocaleString()}</span></div>
+                                <div><span className="text-gray-500">Security Deposit: </span><span className="font-semibold text-emerald-700">£{b.securityDeposit.toLocaleString()} (Refunded ✓)</span></div>
+                                <div><span className="text-gray-500">Net Settled: </span><span className="font-bold" style={{ color: '#C8860A' }}>£{(getTotalAmount(b) - b.securityDeposit).toLocaleString()}</span></div>
+                              </>
+                            ) : (
+                              <div><span className="text-gray-500">Total: </span><span className="font-bold" style={{ color: '#C8860A' }}>£{getTotalAmount(b).toLocaleString()}</span></div>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <Icon name="CheckCircleIcon" size={14} className="text-emerald-500" />
+                              <span className="text-emerald-700 font-medium text-xs">
+                                {b.securityDeposit && b.securityDeposit > 0 ? 'Fully Paid & Deposit Refunded ✓' : 'Fully Paid'}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
@@ -7251,8 +7382,118 @@ Warm regards,
                     <span className="font-semibold text-gray-900">£{getFoodPackageTotal(selectedBooking).toLocaleString()}</span>
                   </div>
 
+                  {/* Security Deposit Card */}
+                  {(() => {
+                    const secDepositAmt = selectedBooking.securityDeposit ?? 0;
+                    const isSecRefunded = !!(selectedBooking.securityDepositRefunded || (selectedBooking.finalPaymentPaid && secDepositAmt > 0) || (selectedBooking.status === 'completed' && secDepositAmt > 0));
+                    return (
+                      <div className="bg-amber-50/70 rounded-lg p-3 border border-amber-200/90 space-y-2 mt-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-amber-950">🛡️ Security Deposit</span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              isSecRefunded
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-amber-100 text-amber-800 border border-amber-200'
+                            }`}>
+                              {isSecRefunded ? 'Refunded ✓' : 'Refundable'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {!isEditingSecDeposit ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditSecDepositValue(String(secDepositAmt));
+                                  setIsEditingSecDeposit(true);
+                                }}
+                                className="text-[10px] text-amber-700 hover:text-amber-900 font-semibold transition-colors flex items-center gap-0.5"
+                                title="Edit Security Deposit Amount"
+                              >
+                                <Icon name="PencilIcon" size={10} />
+                                <span>Edit</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setIsEditingSecDeposit(false)}
+                                className="text-[10px] text-gray-400 hover:text-gray-600 font-medium"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSecurityDepositRefund(selectedBooking)}
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded transition-colors shadow-2xs border ${
+                                isSecRefunded
+                                  ? 'bg-white hover:bg-gray-100 text-gray-700 border-gray-300'
+                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'
+                              }`}
+                              title={isSecRefunded ? 'Mark security deposit as pending' : 'Mark security deposit as refunded'}
+                            >
+                              {isSecRefunded ? 'Mark Pending' : 'Mark Refunded ✓'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {!isEditingSecDeposit ? (
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-600">Deposit Amount</span>
+                            <span className="font-bold text-amber-900">£{secDepositAmt.toLocaleString()}</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between gap-2 pt-1">
+                            <span className="text-xs text-gray-600">Amount:</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-400">£</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={editSecDepositValue}
+                                onChange={(e) => setEditSecDepositValue(e.target.value)}
+                                className="w-20 border border-amber-300 rounded px-1.5 py-0.5 text-xs text-right font-bold text-gray-900 bg-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const newSec = Math.max(0, parseFloat(editSecDepositValue) || 0);
+                                  const updateData: any = {
+                                    securityDeposit: newSec,
+                                    updatedAt: new Date().toISOString()
+                                  };
+                                  setSelectedBooking((prev: any) => prev ? ({ ...prev, ...updateData }) : null);
+                                  setBookings((prev: any[]) => prev.map(b => b.id === selectedBooking.id ? ({ ...b, ...updateData }) : b));
+                                  try {
+                                    await setDoc(doc(db, 'booking_requests', selectedBooking.id), updateData, { merge: true });
+                                    await setDoc(doc(db, 'bookings', selectedBooking.id), updateData, { merge: true });
+                                    setCustomAlert({ message: `Security deposit updated to £${newSec.toLocaleString()}`, type: 'success' });
+                                  } catch (err) {
+                                    console.error('Error updating security deposit:', err);
+                                    setCustomAlert({ message: 'Failed to update security deposit', type: 'error' });
+                                  }
+                                  setIsEditingSecDeposit(false);
+                                }}
+                                className="text-[10px] bg-amber-600 hover:bg-amber-700 text-white font-bold px-2 py-0.5 rounded shadow-2xs transition-colors"
+                              >
+                                Save
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        <p className="text-[11px] text-amber-800 font-medium italic">
+                          This security deposit amount is completely refundable.
+                        </p>
+                      </div>
+                    );
+                  })()}
+
                   {(() => {
                     const grandTotal = getTotalAmount(selectedBooking);
+                    const secDepositAmt = selectedBooking.securityDeposit ?? 0;
+                    const isSecRefunded = !!(selectedBooking.securityDepositRefunded || (selectedBooking.finalPaymentPaid && secDepositAmt > 0) || (selectedBooking.status === 'completed' && secDepositAmt > 0));
+
                     const extraChargesTotal = (selectedBooking.extraCharges || []).reduce((s, c) => s + c.amount, 0);
                     const finalPaymentPaidAmt = grandTotal - selectedBooking.deposit - extraChargesTotal;
                     
@@ -7265,6 +7506,7 @@ Warm regards,
                                       (isExtraPaid ? extraChargesTotal : 0);
                                       
                     const remainingBalance = grandTotal - totalPaid;
+                    const netSettledTotal = Math.max(0, grandTotal - secDepositAmt);
 
                     return (
                       <div className="space-y-2 border-t border-gray-200 pt-3">
@@ -7396,17 +7638,41 @@ Warm regards,
                             </div>
                           )}
 
+                          {/* Security Deposit row in breakdown */}
+                          {secDepositAmt > 0 && (
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-500">Security Deposit (Refundable)</span>
+                              <span className="font-semibold text-amber-800">£{secDepositAmt.toLocaleString()}</span>
+                            </div>
+                          )}
+
                           {/* Total Paid */}
                           <div className="flex justify-between text-xs border-t border-gray-100 pt-1.5 font-semibold text-gray-700">
                             <span>Total Paid</span>
                             <span className="text-emerald-700 font-bold">£{totalPaid.toLocaleString()}</span>
                           </div>
 
+                          {/* Refund row if completed or refunded */}
+                          {secDepositAmt > 0 && isSecRefunded && (
+                            <>
+                              <div className="flex justify-between text-xs text-emerald-700 font-semibold">
+                                <span>Security Deposit Refunded</span>
+                                <span>-£{secDepositAmt.toLocaleString()} (Returned ✓)</span>
+                              </div>
+                              <div className="flex justify-between text-xs text-gray-700 font-semibold">
+                                <span>Net Settled Event Cost</span>
+                                <span className="font-bold text-gray-900">£{netSettledTotal.toLocaleString()}</span>
+                              </div>
+                            </>
+                          )}
+
                           {/* Remaining Balance Due */}
                           <div className="flex justify-between text-sm border-t border-gray-200 pt-1.5 font-bold">
                             <span className="text-gray-700">Remaining Balance Due</span>
                             <span className={remainingBalance <= 0 ? 'text-emerald-700' : 'text-amber-600'}>
-                              {remainingBalance <= 0 ? 'PAID IN FULL ✓' : `£${remainingBalance.toLocaleString()}`}
+                              {remainingBalance <= 0
+                                ? (secDepositAmt > 0 && isSecRefunded ? 'PAID IN FULL ✓ • DEPOSIT REFUNDED' : 'PAID IN FULL ✓')
+                                : `£${remainingBalance.toLocaleString()}`}
                             </span>
                           </div>
                         </div>

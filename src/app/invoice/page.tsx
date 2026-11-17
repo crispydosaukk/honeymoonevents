@@ -92,6 +92,9 @@ function InvoiceContent() {
           extraCharges: data.extraCharges || [],
           discount: data.discount,
           venueHallCharge: data.venueHallCharge,
+          securityDeposit: data.securityDeposit,
+          securityDepositRefunded: data.securityDepositRefunded,
+          securityDepositRefundedAt: data.securityDepositRefundedAt,
           enquiryDate: data.createdAt ? new Date(data.createdAt).toISOString().split('T')[0] : '',
           paymentMethodDeposit: data.paymentMethodDeposit,
           paymentMethodFinal: data.paymentMethodFinal,
@@ -465,6 +468,32 @@ function InvoiceContent() {
                   </td>
                 </tr>
               ))}
+              {calc.securityDeposit > 0 && (
+                <tr className="bg-amber-50/40">
+                  <td className="py-3 px-4">
+                    <div className="font-bold text-neutral-900 flex items-center gap-1.5">
+                      <span>🛡️ Refundable Security Deposit</span>
+                      {calc.isSecurityDepositRefunded ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          Refunded ✓
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                          100% Refundable
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-emerald-700 font-medium mt-0.5">
+                      {calc.isSecurityDepositRefunded
+                        ? '✓ Security deposit has been completely refunded to client.'
+                        : '✓ This security deposit amount is completely refundable post-event.'}
+                    </div>
+                  </td>
+                  <td className="py-3 px-4 text-right font-bold text-neutral-900 align-middle">
+                    £{calc.securityDeposit.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -482,6 +511,14 @@ function InvoiceContent() {
               <div className="flex justify-between text-rose-600">
                 <span>Discount ({booking.discount.reason}):</span>
                 <span className="font-semibold">-£{calc.discountAmount.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            {calc.securityDeposit > 0 && (
+              <div className="flex justify-between text-neutral-700">
+                <span>Security Deposit (Refundable):</span>
+                <span className="font-semibold text-neutral-900">
+                  £{calc.securityDeposit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+                </span>
               </div>
             )}
             <div className="flex justify-between font-extrabold text-sm text-amber-700 pt-2 border-t-2 border-amber-500">
@@ -508,15 +545,33 @@ function InvoiceContent() {
                   </span>
                 </div>
                 <div className="flex justify-between font-bold text-neutral-900 pt-1 border-t border-neutral-200">
-                  <span>Total Paid:</span>
+                  <span>Total Paid to Date:</span>
                   <span className="text-emerald-700">£{calc.totalPaid.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
                 </div>
+                {calc.securityDeposit > 0 && calc.isSecurityDepositRefunded && (
+                  <>
+                    <div className="flex justify-between text-emerald-700 font-medium">
+                      <span>Security Deposit Refunded:</span>
+                      <span className="font-semibold">-£{calc.securityDeposit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-neutral-900 pt-1 border-t border-dashed border-neutral-300">
+                      <span>Net Settled Event Total:</span>
+                      <span className="text-amber-800">£{calc.servicesTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </>
+                )}
               </>
             )}
 
             <div className={`p-3 rounded-xl flex justify-between font-bold text-sm ${calc.balanceDue <= 0 ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-amber-100 text-amber-950 border border-amber-300'}`}>
               <span>{isDepositOnly ? 'Balance After Deposit:' : 'Remaining Balance:'}</span>
-              <span>{calc.balanceDue <= 0 ? 'PAID IN FULL ✓' : `£${calc.balanceDue.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`}</span>
+              <span>
+                {calc.balanceDue <= 0
+                  ? (calc.securityDeposit > 0 && calc.isSecurityDepositRefunded
+                      ? 'PAID IN FULL ✓ • DEPOSIT REFUNDED'
+                      : 'PAID IN FULL ✓')
+                  : `£${calc.balanceDue.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`}
+              </span>
             </div>
           </div>
         </div>

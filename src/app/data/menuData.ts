@@ -276,10 +276,10 @@ export const TERMS_AND_CONDITIONS = {
 };
 
 export const DRY_HIRE_PRICES = [
-  { day: 'Saturday',            session: 'Dinner', price: 3000 },
-  { day: 'Saturday',            session: 'Lunch',  price: 2000 },
-  { day: 'Friday & Sunday',     session: 'Dinner', price: 2000 },
-  { day: 'Friday & Sunday',     session: 'Lunch',  price: 1500 },
-  { day: 'Monday to Thursday',  session: 'Dinner', price: 1500 },
-  { day: 'Monday to Thursday',  session: 'Lunch',  price: 1000 },
+  { day: 'Saturday',            session: 'Dinner', price: 3000, securityDeposit: 500 },
+  { day: 'Saturday',            session: 'Lunch',  price: 2000, securityDeposit: 500 },
+  { day: 'Friday & Sunday',     session: 'Dinner', price: 2000, securityDeposit: 500 },
+  { day: 'Friday & Sunday',     session: 'Lunch',  price: 1500, securityDeposit: 500 },
+  { day: 'Monday to Thursday',  session: 'Dinner', price: 1500, securityDeposit: 500 },
+  { day: 'Monday to Thursday',  session: 'Lunch',  price: 1000, securityDeposit: 500 },
 ];

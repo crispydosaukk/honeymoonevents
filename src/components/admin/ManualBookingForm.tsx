@@ -16,6 +16,12 @@ import {
 import { ConfiguredExtraCharge } from './ExtraChargesSettings';
 import { generateChefMenuPDF, openChefWhatsApp } from '@/utils/chefMenuPDF';
 import { getKidsPriceFromList } from '@/utils/kidsPricing';
+import {
+  COUNTRY_CODES,
+  parsePhoneNumber,
+  formatFullPhoneNumber,
+  validatePhoneNumber,
+} from '@/utils/countryCodes';
 
 const EVENT_TYPES = [
   'Wedding',
@@ -112,6 +118,8 @@ export default function ManualBookingForm({
   const [customerDetails, setCustomerDetails] = useState<{
     name: string;
     phone: string;
+    countryCode: string;
+    dialCode: string;
     email: string;
     eventType: string;
     customEventType: string;
@@ -125,6 +133,8 @@ export default function ManualBookingForm({
   }>({
     name: '',
     phone: '',
+    countryCode: 'GB',
+    dialCode: '+44',
     email: '',
     eventType: '',
     customEventType: '',
@@ -273,6 +283,8 @@ export default function ManualBookingForm({
     reason?: string;
   } | null>(null);
   const [showHallPriceEditor, setShowHallPriceEditor] = useState<boolean>(false);
+  // Dynamic Refundable Security Deposit
+  const [securityDeposit, setSecurityDeposit] = useState<number>(0);
 
   // ── Step 3: Extra Charges, Discount & Payment ──
   // Active extra charges applied to this booking (with custom amount & reason)
@@ -318,9 +330,12 @@ export default function ManualBookingForm({
   useEffect(() => {
     if (!editingBooking) return;
 
+    const parsedPhone = parsePhoneNumber(editingBooking.phone);
     setCustomerDetails({
       name: editingBooking.name || '',
-      phone: editingBooking.phone || '',
+      phone: editingBooking.phone ? parsedPhone.nationalNumber : '',
+      countryCode: editingBooking.countryCode || parsedPhone.countryCode || 'GB',
+      dialCode: editingBooking.dialCode || parsedPhone.dialCode || '+44',
       email: editingBooking.email || '',
       eventType: editingBooking.eventType || 'Wedding',
       customEventType: '',
@@ -332,6 +347,10 @@ export default function ManualBookingForm({
       kidsUnder4: editingBooking.kidsUnder4 ?? 0,
       notes: editingBooking.notes || '',
     });
+
+    if (editingBooking.securityDeposit !== undefined) {
+      setSecurityDeposit(Number(editingBooking.securityDeposit) || 0);
+    }
 
     const pkgName = editingBooking.selectedMenu || editingBooking.package;
     const foundPkg = banquetPackages.find(
@@ -480,16 +499,28 @@ export default function ManualBookingForm({
     return allBanquetPackages.find((p) => p.id === selectedPackageId) || null;
   }, [allBanquetPackages, selectedPackageId]);
 
-  // UK Phone formatting & validation
-  const validatePhone = (val: string) => {
-    const cleaned = val.replace(/\s/g, '');
-    return /^(07\d{9}|7\d{9}|\+447\d{9})$/.test(cleaned) || cleaned === '';
-  };
-
+  // Dynamic Phone formatting & validation using Country Codes
   const handlePhoneChange = (val: string) => {
+    if (val.trim().startsWith('+')) {
+      const parsed = parsePhoneNumber(val);
+      setCustomerDetails((prev) => ({
+        ...prev,
+        phone: parsed.nationalNumber,
+        countryCode: parsed.countryCode,
+        dialCode: parsed.dialCode,
+      }));
+      if (parsed.nationalNumber && !validatePhoneNumber(parsed.dialCode, parsed.nationalNumber)) {
+        setPhoneError(`Please enter a valid phone number for ${parsed.dialCode}`);
+      } else {
+        setPhoneError('');
+      }
+      return;
+    }
+
     setCustomerDetails((prev) => ({ ...prev, phone: val }));
-    if (val && !validatePhone(val)) {
-      setPhoneError('Enter a valid UK phone (e.g. 07700 900101 or +447700900101)');
+    if (val.trim() && !validatePhoneNumber(customerDetails.dialCode, val)) {
+      const cItem = COUNTRY_CODES.find((c) => c.dialCode === customerDetails.dialCode);
+      setPhoneError(`Enter a valid phone number for ${cItem?.name || customerDetails.dialCode}`);
     } else {
       setPhoneError('');
     }
@@ -524,6 +555,7 @@ export default function ManualBookingForm({
   const handleVenueHireSelectChange = (val: string) => {
     if (!val) {
       setSelectedHallOption(null);
+      setSecurityDeposit(0);
       setShowHallPriceEditor(false);
       return;
     }
@@ -555,6 +587,7 @@ export default function ManualBookingForm({
           isCustomAmount: false,
           reason: '',
         });
+        setSecurityDeposit(0);
         setShowHallPriceEditor(false);
       }
       return;
@@ -571,6 +604,7 @@ export default function ManualBookingForm({
           isCustomAmount: false,
           reason: '',
         });
+        setSecurityDeposit(dh.securityDeposit ?? 500);
         setShowHallPriceEditor(false);
       }
       return;
@@ -649,8 +683,11 @@ export default function ManualBookingForm({
     return val;
   }, [discountType, discountValue, subtotalBeforeExtras, extraChargesTotal]);
 
-  // Grand Total
-  const grandTotal = Math.max(0, subtotalBeforeExtras + extraChargesTotal - discountAmount);
+  // Event Services Subtotal
+  const servicesSubtotal = Math.max(0, subtotalBeforeExtras + extraChargesTotal - discountAmount);
+
+  // Grand Total: Services + Refundable Security Deposit
+  const grandTotal = servicesSubtotal + Number(securityDeposit || 0);
 
   // Suggested Deposit
   const standardDeposit = useMemo(() => {
@@ -877,8 +914,13 @@ export default function ManualBookingForm({
   const validateStep1 = () => {
     const errors: Record<string, string> = {};
     if (!customerDetails.name.trim()) errors.name = 'Customer full name is required.';
-    if (!customerDetails.phone.trim()) errors.phone = 'Phone number is required.';
-    if (phoneError) errors.phone = phoneError;
+    if (!customerDetails.phone.trim()) {
+      errors.phone = 'Phone number is required.';
+    } else if (!validatePhoneNumber(customerDetails.dialCode, customerDetails.phone)) {
+      errors.phone = phoneError || 'Please enter a valid phone number.';
+    } else if (phoneError) {
+      errors.phone = phoneError;
+    }
     if (!customerDetails.eventType) errors.eventType = 'Event type is required.';
     if (!customerDetails.date) errors.date = 'Event date is required.';
     if (customerDetails.adults === '' || Number(customerDetails.adults) < 1) errors.adults = 'At least 1 adult guest required.';
@@ -932,6 +974,8 @@ export default function ManualBookingForm({
       deposit: amountPaid,
       depositPaid: isDepositOnly || paymentChoice !== 'pending',
       finalPaymentPaid: !isDepositOnly && paymentChoice === 'full',
+      securityDeposit: Number(securityDeposit) || 0,
+      securityDepositRefunded: !isDepositOnly && paymentChoice === 'full' && Number(securityDeposit) > 0,
       status: paymentChoice === 'full' ? 'completed' : isDepositOnly ? 'deposit_confirmed' : 'new_enquiry',
       notes: customerDetails.notes.trim() + (auditNotes.length > 0 ? (customerDetails.notes.trim() ? '\n\n' : '') + '🏷️ Price Adjustments:\n' + auditNotes.join('\n') : ''),
       priceOverrides: {
@@ -1095,9 +1139,7 @@ export default function ManualBookingForm({
     try {
       const isEditing = Boolean(editingBooking?.id);
       const bookingRefId = isEditing ? editingBooking.id : `BK-${Date.now().toString().slice(-6)}`;
-      const fullPhone = customerDetails.phone.startsWith('+')
-        ? customerDetails.phone
-        : `+44${customerDetails.phone.replace(/^0/, '').replace(/\s/g, '')}`;
+      const fullPhone = formatFullPhoneNumber(customerDetails.dialCode, customerDetails.phone);
 
       const finalTime = customerDetails.timeSession === 'custom'
         ? customerDetails.customTime || '12:00 PM'
@@ -1121,7 +1163,9 @@ export default function ManualBookingForm({
       const bookingRecord: Record<string, any> = {
         id: bookingRefId,
         name: customerDetails.name.trim(),
-        phone: fullPhone,
+        phone: fullPhone || customerDetails.phone.trim(),
+        countryCode: customerDetails.countryCode || 'GB',
+        dialCode: customerDetails.dialCode || '+44',
         email: customerDetails.email.trim() || 'N/A',
         eventType: finalEventType,
         date: customerDetails.date,
@@ -1140,6 +1184,9 @@ export default function ManualBookingForm({
         deposit: amountPaid,
         depositPaid: isDepositPaid,
         finalPaymentPaid: isFinalPaid,
+        securityDeposit: Number(securityDeposit) || 0,
+        securityDepositRefunded: isFinalPaid && Number(securityDeposit) > 0,
+        ...(isFinalPaid && Number(securityDeposit) > 0 ? { securityDepositRefundedAt: new Date().toISOString() } : {}),
         status: finalStatus,
         dueDate: paymentDueDate || customerDetails.date,
         ...(isFinalPaid ? { orderClosedAt: new Date().toISOString() } : {}),
@@ -1275,6 +1322,8 @@ export default function ManualBookingForm({
     setCustomerDetails({
       name: '',
       phone: '',
+      countryCode: 'GB',
+      dialCode: '+44',
       email: '',
       eventType: '',
       customEventType: '',
@@ -1468,16 +1517,53 @@ export default function ManualBookingForm({
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
                 Phone Number *
               </label>
-              <input
-                type="tel"
-                required
-                placeholder="e.g. 07700 900101 or +447700900101"
-                value={customerDetails.phone}
-                onChange={(e) => handlePhoneChange(e.target.value)}
-                className={`w-full border rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 ${
-                  phoneError || step1Errors.phone ? 'border-red-300 ring-1 ring-red-300' : 'border-gray-200'
-                }`}
-              />
+              <div className="flex gap-2">
+                <select
+                  value={customerDetails.dialCode}
+                  onChange={(e) => {
+                    const selectedDial = e.target.value;
+                    const cItem = COUNTRY_CODES.find((c) => c.dialCode === selectedDial);
+                    setCustomerDetails((prev) => ({
+                      ...prev,
+                      dialCode: selectedDial,
+                      countryCode: cItem ? cItem.code : prev.countryCode,
+                    }));
+                    if (customerDetails.phone.trim() && !validatePhoneNumber(selectedDial, customerDetails.phone)) {
+                      setPhoneError(`Please enter a valid phone number for ${cItem?.name || selectedDial}`);
+                    } else {
+                      setPhoneError('');
+                    }
+                  }}
+                  className="w-36 sm:w-44 border border-gray-200 rounded-xl px-2.5 py-2.5 text-xs font-medium bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                  title="Select Country Code"
+                >
+                  <optgroup label="Popular Countries">
+                    {COUNTRY_CODES.filter((c) => c.priority).map((c) => (
+                      <option key={`${c.code}-${c.dialCode}`} value={c.dialCode}>
+                        {c.flag} {c.name} ({c.dialCode})
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="All Countries">
+                    {COUNTRY_CODES.filter((c) => !c.priority).map((c) => (
+                      <option key={`${c.code}-${c.dialCode}`} value={c.dialCode}>
+                        {c.flag} {c.name} ({c.dialCode})
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+
+                <input
+                  type="tel"
+                  required
+                  placeholder={customerDetails.dialCode === '+44' ? 'e.g. 0782043589 or 07700 900101' : 'e.g. phone number'}
+                  value={customerDetails.phone}
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  className={`flex-1 min-w-0 border rounded-xl px-4 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                    phoneError || step1Errors.phone ? 'border-red-300 ring-1 ring-red-300' : 'border-gray-200'
+                  }`}
+                />
+              </div>
               {(phoneError || step1Errors.phone) && (
                 <p className="text-xs text-red-500 mt-1">{phoneError || step1Errors.phone}</p>
               )}
@@ -1778,7 +1864,7 @@ export default function ManualBookingForm({
                     <optgroup label="🔑 Dry Hire Sessions (Hall-Only Hire)">
                       {dryHirePrices.map((dh, idx) => (
                         <option key={`dry_${idx}`} value={`dry_${idx}`}>
-                          Dry Hire: {dh.day} ({dh.session}) — £{dh.price.toLocaleString()}
+                          Dry Hire: {dh.day} ({dh.session}) — £{dh.price.toLocaleString()} + £{(dh.securityDeposit ?? 500).toLocaleString()} Refundable Deposit
                         </option>
                       ))}
                     </optgroup>
@@ -1809,6 +1895,36 @@ export default function ManualBookingForm({
                   )}
                 </div>
               </div>
+
+              {/* Dynamic Refundable Security Deposit Field */}
+              {selectedHallOption && (selectedHallOption.label.toLowerCase().includes('dry hire') || securityDeposit > 0) && (
+                <div className="mt-3 p-3.5 bg-emerald-50/80 border border-emerald-300 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🛡️</span>
+                      <div>
+                        <span className="text-xs font-bold text-emerald-950 uppercase tracking-wide">
+                          Refundable Security Deposit (Dynamic Amount)
+                        </span>
+                        <p className="text-[11px] text-emerald-700 font-medium">
+                          ✓ This security deposit amount is completely refundable.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-gray-500">£</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={securityDeposit}
+                        onChange={(e) => setSecurityDeposit(Math.max(0, Number(e.target.value) || 0))}
+                        className="w-24 px-2.5 py-1.5 border border-emerald-300 rounded-lg text-xs font-extrabold text-emerald-900 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 text-right shadow-2xs"
+                        placeholder="Security Deposit"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Inline Custom Rate / Override Drawer */}
               {(venueHireSelectValue === 'custom' || (showHallPriceEditor && selectedHallOption)) && selectedHallOption && (
@@ -3265,7 +3381,14 @@ export default function ManualBookingForm({
                               <div className="text-sm font-bold text-[#C8860A]">
                                 £{isSelected && selectedHallOption ? selectedHallOption.amount.toLocaleString() : defaultAmount.toLocaleString()}
                               </div>
+                              <div className="text-[11px] font-bold text-emerald-700">
+                                +£{(isSelected && securityDeposit > 0 ? securityDeposit : (dh.securityDeposit ?? 500)).toLocaleString()} Deposit
+                              </div>
                             </div>
+                          </div>
+
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 text-[11px] text-emerald-800 font-medium">
+                            ✓ This security deposit amount is completely refundable.
                           </div>
 
                           <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
@@ -3276,12 +3399,13 @@ export default function ManualBookingForm({
                                   onClick={() => setShowHallPriceEditor(!showHallPriceEditor)}
                                   className="text-[11px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded-lg"
                                 >
-                                  Edit Dry Hire Fee
+                                  Edit Dry Hire Fee &amp; Deposit
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setSelectedHallOption(null);
+                                    setSecurityDeposit(0);
                                     setShowHallPriceEditor(false);
                                   }}
                                   className="text-[11px] font-bold text-red-600 hover:text-red-800 bg-red-50 px-2 py-1 rounded-lg border border-red-200"
@@ -3298,6 +3422,7 @@ export default function ManualBookingForm({
                                     amount: defaultAmount,
                                     defaultAmount,
                                   });
+                                  setSecurityDeposit(dh.securityDeposit ?? 500);
                                   setShowHallPriceEditor(false);
                                 }}
                                 className="w-full py-1.5 px-3 rounded-lg text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-center transition-colors"
@@ -3332,6 +3457,24 @@ export default function ManualBookingForm({
                                     className="w-full pl-6 pr-2 py-1.5 border border-amber-300 rounded-lg text-xs font-bold bg-white"
                                   />
                                 </div>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-emerald-900 mb-0.5">
+                                  Refundable Security Deposit (£):
+                                </label>
+                                <div className="relative">
+                                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold">£</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={securityDeposit}
+                                    onChange={(e) => setSecurityDeposit(Math.max(0, Number(e.target.value) || 0))}
+                                    className="w-full pl-6 pr-2 py-1.5 border border-emerald-300 rounded-lg text-xs font-bold text-emerald-950 bg-white"
+                                  />
+                                </div>
+                                <p className="text-[10px] text-emerald-700 font-medium mt-0.5">
+                                  ✓ This security deposit amount is completely refundable.
+                                </p>
                               </div>
                               <div>
                                 <label className="block text-[10px] font-bold text-gray-700 mb-0.5">
@@ -4054,7 +4197,42 @@ export default function ManualBookingForm({
               </div>
             </div>
 
-            {/* 3. Discounts with Reason */}
+            {/* 3. Refundable Security Deposit Card */}
+            {(securityDeposit > 0 || selectedHallOption?.label?.toLowerCase().includes('dry hire')) && (
+              <div className="bg-emerald-50/70 border border-emerald-300 rounded-2xl p-5 shadow-sm space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-800 font-bold text-base shadow-2xs">
+                      🛡️
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-emerald-950 text-sm">
+                        Security Deposit (Dynamic Amount)
+                      </h4>
+                      <p className="text-xs text-emerald-700 font-semibold mt-0.5">
+                        ✓ This security deposit amount is completely refundable.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-bold text-emerald-900">£</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={securityDeposit}
+                      onChange={(e) => setSecurityDeposit(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-28 px-3 py-2 border border-emerald-300 rounded-xl text-sm font-extrabold text-emerald-900 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-right shadow-xs"
+                      placeholder="500"
+                    />
+                  </div>
+                </div>
+                <div className="text-[11px] text-emerald-800 bg-white/80 p-2.5 rounded-xl border border-emerald-200">
+                  ℹ️ <strong>Policy Note:</strong> This security deposit is held safely against damage or hall return conditions, and is completely refundable back to the customer post-event upon inspection.
+                </div>
+              </div>
+            )}
+
+            {/* 4. Discounts with Reason */}
             <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
                 <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
@@ -4476,6 +4654,19 @@ export default function ManualBookingForm({
                   </div>
                 )}
 
+                {/* Security Deposit */}
+                {securityDeposit > 0 && (
+                  <div className="pt-2 border-t border-gray-100 space-y-1">
+                    <div className="flex justify-between text-emerald-800 font-semibold">
+                      <span>🛡️ Security Deposit (Refundable):</span>
+                      <span>+£{securityDeposit.toLocaleString()}</span>
+                    </div>
+                    <p className="text-[10px] text-emerald-700 font-medium">
+                      ✓ This security deposit amount is completely refundable.
+                    </p>
+                  </div>
+                )}
+
                 {/* Grand Total */}
                 <div className="pt-2.5 border-t-2 border-gray-200 flex justify-between items-baseline">
                   <span className="text-sm font-bold text-gray-900">Grand Total:</span>
@@ -4752,8 +4943,8 @@ export default function ManualBookingForm({
             <a
               href={`https://wa.me/${formatWhatsAppPhone(createdBooking.phone)}?text=${encodeURIComponent(
                 createdBooking.finalPaymentPaid || createdBooking.status === 'completed'
-                  ? `Hi ${createdBooking.name.split(' ')[0]}, thank you for confirming your booking with Honeymoon Events! 🎉\n\n*Booking Ref:* ${createdBooking.id}\n*Event:* ${createdBooking.eventType} on ${createdBooking.date} (${createdBooking.time})\n*Package:* ${createdBooking.package} for ${createdBooking.guests} guests\n*Grand Total:* £${grandTotal.toLocaleString()}\n*Payment Status:* Paid in Full via ${paymentMethod} ✅\n*Order Status:* Closed & Confirmed\n\nWe look forward to hosting your memorable event! Please contact us if you need any assistance.`
-                  : `Hi ${createdBooking.name.split(' ')[0]}, thank you for confirming your booking with Honeymoon Events! 🎉\n\nBooking Ref: ${createdBooking.id}\nEvent: ${createdBooking.eventType} on ${createdBooking.date} (${createdBooking.time})\nPackage: ${createdBooking.package} for ${createdBooking.guests} guests\nTotal: £${grandTotal.toLocaleString()}\nAmount Paid: £${amountPaid.toLocaleString()} (${paymentMethod})\nRemaining Balance: £${(grandTotal - amountPaid).toLocaleString()}\n\nWe look forward to hosting your memorable event!`
+                  ? `Hi ${createdBooking.name.split(' ')[0]}, thank you for confirming your booking with Honeymoon Events! 🎉\n\n*Booking Ref:* ${createdBooking.id}\n*Event:* ${createdBooking.eventType} on ${createdBooking.date} (${createdBooking.time})\n*Package:* ${createdBooking.package} for ${createdBooking.guests} guests\n*Grand Total:* £${grandTotal.toLocaleString()}${createdBooking.securityDeposit > 0 ? `\n*Security Deposit:* £${createdBooking.securityDeposit.toLocaleString()} (Refunded ✓)` : ''}\n*Payment Status:* Paid in Full via ${paymentMethod} ✅\n*Order Status:* Closed & Confirmed\n\nWe look forward to hosting your memorable event! Please contact us if you need any assistance.`
+                  : `Hi ${createdBooking.name.split(' ')[0]}, thank you for confirming your booking with Honeymoon Events! 🎉\n\nBooking Ref: ${createdBooking.id}\nEvent: ${createdBooking.eventType} on ${createdBooking.date} (${createdBooking.time})\nPackage: ${createdBooking.package} for ${createdBooking.guests} guests\nTotal: £${grandTotal.toLocaleString()}${createdBooking.securityDeposit > 0 ? `\nSecurity Deposit (Refundable): £${createdBooking.securityDeposit.toLocaleString()} (100% Refundable)` : ''}\nAmount Paid: £${amountPaid.toLocaleString()} (${paymentMethod})\nRemaining Balance: £${(grandTotal - amountPaid).toLocaleString()}\n\nWe look forward to hosting your memorable event!`
               )}`}
               target="_blank"
               rel="noopener noreferrer"

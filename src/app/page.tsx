@@ -20,6 +20,12 @@ import {
   DRY_HIRE_PRICES as DEFAULT_DRY_HIRE_PRICES,
 } from '@/app/data/menuData';
 import { onSnapshot, doc } from 'firebase/firestore';
+import {
+  COUNTRY_CODES,
+  validatePhoneNumber,
+  formatFullPhoneNumber,
+  parsePhoneNumber,
+} from '@/utils/countryCodes';
 
 const EVENT_TYPES = ['Wedding', 'Birthday', 'Corporate', 'Anniversary', 'Graduation', 'Other'];
 
@@ -102,20 +108,60 @@ export default function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [customHomeAlert, setCustomHomeAlert] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [phoneError, setPhoneError] = useState('');
+  const [selectedCountryCode, setSelectedCountryCode] = useState<string>('GB');
+  const [selectedDialCode, setSelectedDialCode] = useState<string>('+44');
 
-  // UK phone validation: 07xxxxxxxxx (11 digits) or +447xxxxxxxxx
-  const validateUKPhone = (digits: string) => {
-    const cleaned = digits.replace(/\s/g, '');
-    // Accept: 07XXXXXXXXX (10 local digits starting with 07) or 7XXXXXXXXX (9 local digits starting with 7)
-    return /^(07\d{9}|7\d{9})$/.test(cleaned) || cleaned === '';
+  const handleCountryChange = (newCode: string) => {
+    const item = COUNTRY_CODES.find(c => c.code === newCode);
+    if (item) {
+      setSelectedCountryCode(item.code);
+      setSelectedDialCode(item.dialCode);
+      if (bookingForm.phone) {
+        const isValid = validatePhoneNumber(bookingForm.phone, item.dialCode);
+        if (!isValid) {
+          setPhoneError(
+            item.dialCode === '+44'
+              ? 'Enter a valid UK phone (e.g. 07700 900101 or 0782043589)'
+              : `Enter a valid phone number for ${item.dialCode}`
+          );
+        } else {
+          setPhoneError('');
+        }
+      }
+    }
   };
 
-  const handlePhoneChange = (digits: string) => {
+  const handlePhoneChange = (inputVal: string) => {
+    // Check if the user pasted an international number starting with '+' or dial code
+    if (inputVal.trim().startsWith('+')) {
+      const parsed = parsePhoneNumber(inputVal.trim());
+      setSelectedCountryCode(parsed.countryCode);
+      setSelectedDialCode(parsed.dialCode);
+      setBookingForm(prev => ({ ...prev, phone: parsed.nationalNumber }));
+      const isValid = validatePhoneNumber(parsed.nationalNumber, parsed.dialCode);
+      if (parsed.nationalNumber && !isValid) {
+        setPhoneError('Please enter a valid phone number');
+      } else {
+        setPhoneError('');
+      }
+      return;
+    }
+
     // Only allow digits and spaces
-    const sanitized = digits.replace(/[^\d\s]/g, '');
-    setBookingForm({ ...bookingForm, phone: sanitized });
-    if (sanitized && !validateUKPhone(sanitized)) {
-      setPhoneError('Enter a valid UK number (e.g. 07700 900000)');
+    const sanitized = inputVal.replace(/[^\d\s]/g, '');
+    setBookingForm(prev => ({ ...prev, phone: sanitized }));
+
+    if (sanitized) {
+      const isValid = validatePhoneNumber(sanitized, selectedDialCode);
+      if (!isValid) {
+        setPhoneError(
+          selectedDialCode === '+44'
+            ? 'Enter a valid UK phone (e.g. 07700 900101 or 0782043589)'
+            : `Enter a valid phone number for ${selectedDialCode}`
+        );
+      } else {
+        setPhoneError('');
+      }
     } else {
       setPhoneError('');
     }
@@ -123,8 +169,12 @@ export default function HomePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (bookingForm.phone && !validateUKPhone(bookingForm.phone)) {
-      setPhoneError('Enter a valid UK number (e.g. 07700 900000)');
+    if (bookingForm.phone && !validatePhoneNumber(bookingForm.phone, selectedDialCode)) {
+      setPhoneError(
+        selectedDialCode === '+44'
+          ? 'Enter a valid UK phone (e.g. 07700 900101 or 0782043589)'
+          : `Enter a valid phone number for ${selectedDialCode}`
+      );
       return;
     }
     setIsSubmitting(true);
@@ -137,29 +187,36 @@ export default function HomePage() {
       return;
     }
     try {
-      const fullPhone = bookingForm.phone ? `+44${bookingForm.phone.replace(/^0/, '').replace(/\s/g, '')}` : '';
+      const fullPhone = bookingForm.phone ? formatFullPhoneNumber(bookingForm.phone, selectedDialCode) : '';
       const guestCount = Number(bookingForm.guests) || 0;
-    if (guestCount < pricingDetails.minimumGuests) {
-      setCustomHomeAlert({
-        message: `Minimum ${pricingDetails.minimumGuests} guests required to submit a booking request.`,
-        type: 'error'
-      });
-      setIsSubmitting(false);
-      return;
-    }
+      if (guestCount < pricingDetails.minimumGuests) {
+        setCustomHomeAlert({
+          message: `Minimum ${pricingDetails.minimumGuests} guests required to submit a booking request.`,
+          type: 'error'
+        });
+        setIsSubmitting(false);
+        return;
+      }
       const selectedPkg = BANQUET_PACKAGES.find(p => p.name === bookingForm.selectedPackage);
       const selectedExtra = LIVE_COUNTER_PACKAGE?.extras?.find(e => e.name === bookingForm.selectedPackage);
       let baseAmount = 0;
+      let securityDeposit = 0;
       if (selectedPkg) {
         baseAmount = selectedPkg.pricePerPerson * guestCount;
       } else if (selectedExtra) {
         baseAmount = selectedExtra.price;
+      } else if (bookingForm.selectedPackage === 'Dry Hire') {
+        const drySession = DRY_HIRE_PRICES?.[0];
+        baseAmount = drySession ? parseInt(drySession.session.replace(/[^0-9]/g, '')) || 0 : 0;
+        securityDeposit = drySession?.securityDeposit ?? 500;
       }
       const deposit = pricingDetails.depositPercentage;
       await addDoc(collection(db, 'booking_requests'), {
         name: bookingForm.name,
         email: bookingForm.email,
         phone: fullPhone,
+        countryCode: selectedCountryCode,
+        dialCode: selectedDialCode,
         eventType: bookingForm.eventType,
         date: bookingForm.date,
         timeOfDay: bookingForm.timeOfDay,
@@ -168,6 +225,8 @@ export default function HomePage() {
         package: bookingForm.selectedPackage || 'Not Selected',
         baseAmount,
         deposit,
+        securityDeposit,
+        securityDepositRefunded: false,
         extraCharges: [],
         createdAt: new Date().toISOString()
       });
@@ -533,18 +592,37 @@ export default function HomePage() {
                 {/* Dry Hire */}
                 <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm flex flex-col">
                   <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">Dry Hire</h3>
-                  <div className="overflow-x-auto flex-grow mb-6">
+                  <div className="overflow-x-auto flex-grow mb-4">
                     <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-[11px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                        <tr>
+                          <th className="py-2.5 px-3 text-left">Session & Timing</th>
+                          <th className="py-2.5 px-3 text-right">Hire Rate</th>
+                          <th className="py-2.5 px-3 text-right">Security Deposit</th>
+                        </tr>
+                      </thead>
                       <tbody className="divide-y divide-gray-100">
                         {DRY_HIRE_PRICES?.map((row, i) => (
-                          <tr key={i} className="hover:bg-gray-50">
-                            <td className="py-3 pr-4 font-semibold text-gray-800">{row.day}</td>
-                            <td className="py-3 pr-4 text-gray-600 text-right">{row.session}</td>
+                          <tr key={i} className="hover:bg-gray-50/80 transition-colors">
+                            <td className="py-3 px-3 font-semibold text-gray-800">{row.day}</td>
+                            <td className="py-3 px-3 text-gray-700 font-medium text-right">{row.session}</td>
+                            <td className="py-3 px-3 text-amber-800 font-bold text-right">
+                              £{(row.securityDeposit ?? 500).toLocaleString()}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Refundable Policy Notice */}
+                  <div className="bg-amber-50/80 border border-amber-200/80 rounded-xl p-3 text-xs text-amber-900 flex items-start gap-2.5 mb-5 shadow-2xs">
+                    <span className="text-base flex-shrink-0">🛡️</span>
+                    <div>
+                      <span className="font-bold">Refundable Security Deposit:</span> This security deposit amount is completely refundable. It will be returned in full post-event subject to terms and condition checks.
+                    </div>
+                  </div>
+
                   <div className="mt-auto">
                     <button
                       onClick={() => handleEnquireNow('Dry Hire')}
@@ -1012,20 +1090,37 @@ export default function HomePage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
                     <svg viewBox="0 0 24 24" fill="#25D366" className="w-4 h-4 flex-shrink-0"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.533 5.859L.057 23.428a.75.75 0 0 0 .921.921l5.684-1.47A11.943 11.943 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.694 9.694 0 0 1-4.946-1.356l-.355-.211-3.676.95.974-3.578-.231-.368A9.693 9.693 0 0 1 2.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/></svg>
-                    WhatsApp Number
+                    Phone / WhatsApp Number *
                   </label>
-                  <div className={`flex items-center rounded-xl overflow-hidden border ${phoneError ? 'border-red-400' : 'border-gray-300'} focus-within:ring-2 focus-within:ring-yellow-400 focus-within:border-yellow-500`}>
-                    <span className="px-3 py-3 bg-gray-50 text-sm font-semibold text-gray-600 border-r border-gray-300 select-none whitespace-nowrap">+44</span>
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedCountryCode}
+                      onChange={(e) => handleCountryChange(e.target.value)}
+                      className="w-36 bg-white border border-gray-300 rounded-xl px-2 py-3 text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-yellow-500 shadow-2xs"
+                      title="Select Country Dial Code"
+                    >
+                      {COUNTRY_CODES.map((c) => (
+                        <option key={`${c.code}-${c.dialCode}`} value={c.code}>
+                          {c.flag} {c.dialCode} ({c.name})
+                        </option>
+                      ))}
+                    </select>
                     <input
                       type="tel"
+                      required
                       value={bookingForm.phone}
                       onChange={(e) => handlePhoneChange(e.target.value)}
-                      className="flex-1 px-4 py-3 text-sm focus:outline-none bg-white"
-                      placeholder="07700 900000"
-                      maxLength={12}
+                      className={`flex-1 border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 bg-white ${
+                        phoneError ? 'border-red-400 ring-1 ring-red-300' : 'border-gray-300'
+                      }`}
+                      placeholder={selectedDialCode === '+44' ? 'e.g. 07700 900101' : 'e.g. phone number'}
                     />
                   </div>
-                  {phoneError && <p className="text-red-500 text-xs mt-1">{phoneError}</p>}
+                  {phoneError ? (
+                    <p className="text-red-500 text-xs mt-1 font-medium">{phoneError}</p>
+                  ) : (
+                    <p className="text-[11px] text-gray-400 mt-1">International country code will be saved automatically.</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Event Type *</label>

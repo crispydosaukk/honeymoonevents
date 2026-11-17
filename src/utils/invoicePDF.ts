@@ -46,6 +46,10 @@ export interface InvoiceBookingData {
   pricePerPerson?: number;
   kidsPricePerPerson?: number;
   kidsUnder4PricePerPerson?: number;
+  securityDeposit?: number;
+  securityDepositRefunded?: boolean;
+  securityDepositRefundedAt?: string;
+  securityDepositRefundMethod?: string;
 }
 
 export interface BankDetailsConfig {
@@ -93,11 +97,15 @@ export function getInvoiceCalculations(booking: InvoiceBookingData, isDepositOnl
   const baseAmount = Number(booking.baseAmount) || 0;
   const rawExtras = booking.extraCharges || [];
 
-  // Separate Hall Hire from other Extras so Hall Hire is NEVER counted twice
+  // Separate Hall Hire and Security Deposit from other Extras so neither is counted twice
   const hallExtra = rawExtras.find((e) =>
     e.label.toLowerCase().includes('hall hire') ||
     e.label.toLowerCase().includes('dry hire') ||
     e.label.toLowerCase().includes('venue hire')
+  );
+
+  const secDepositExtra = rawExtras.find((e) =>
+    e.label.toLowerCase().includes('security deposit')
   );
 
   let hallCharge = booking.venueHallCharge || null;
@@ -114,11 +122,14 @@ export function getInvoiceCalculations(booking: InvoiceBookingData, isDepositOnl
     hallCharge = booking.venueHallCharge;
   }
 
-  // Other extra charges (strictly excluding any hall hire to prevent double counting)
-  const extraCharges = rawExtras.filter((e) => e !== hallExtra);
+  // Security deposit dynamic resolution (from field or extras)
+  const securityDeposit = Number(booking.securityDeposit ?? secDepositExtra?.amount ?? 0) || 0;
+
+  // Other extra charges (strictly excluding any hall hire & security deposit to prevent double counting)
+  const extraCharges = rawExtras.filter((e) => e !== hallExtra && e !== secDepositExtra);
   const extraChargesTotal = extraCharges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
 
-  // Discount
+  // Discount (applies to event services)
   let discountAmount = 0;
   if (booking.discount) {
     const sub = baseAmount + hallAmount + extraChargesTotal;
@@ -129,8 +140,11 @@ export function getInvoiceCalculations(booking: InvoiceBookingData, isDepositOnl
     }
   }
 
-  // Grand Total: Food Package + Hall Hire + Other Extras - Discount
-  const grandTotal = Math.max(0, baseAmount + hallAmount + extraChargesTotal - discountAmount);
+  // Event Services Subtotal (Base + Hall + Extras - Discount)
+  const servicesTotal = Math.max(0, baseAmount + hallAmount + extraChargesTotal - discountAmount);
+
+  // Grand Total: Services + Refundable Security Deposit
+  const grandTotal = servicesTotal + securityDeposit;
 
   // Deposit logic
   const deposit = Number(booking.deposit) || 0;
@@ -140,19 +154,36 @@ export function getInvoiceCalculations(booking: InvoiceBookingData, isDepositOnl
 
   // Final payment logic
   const isCompleted = booking.status === 'completed';
-  const isFinalPaid = isDepositOnly ? false : !!(booking.finalPaymentPaid || isCompleted);
+  const isFinalPaid = isDepositOnly ? false : !!(booking.finalPaymentPaid || isCompleted || booking.status === 'final_payment_received');
+
+  // Security deposit refund state: marked refunded if explicitly flagged or upon final settlement/completion
+  const isSecurityDepositRefunded = !!(
+    booking.securityDepositRefunded ||
+    (!isDepositOnly && isFinalPaid && securityDeposit > 0)
+  );
+
   const finalPaymentAmt = Math.max(0, grandTotal - deposit);
 
   let totalPaid = 0;
-  if (isCompleted) {
+  if (isCompleted || isFinalPaid) {
     totalPaid = grandTotal;
   } else {
-    totalPaid = (isDepositPaid ? deposit : 0) + (isFinalPaid ? finalPaymentAmt : 0);
+    totalPaid = (isDepositPaid ? deposit : 0);
   }
 
-  const balanceDue = isDepositOnly
-    ? Math.max(0, grandTotal - deposit)
-    : Math.max(0, grandTotal - totalPaid);
+  // Security deposit refunded amount
+  const securityDepositRefundedAmt = isSecurityDepositRefunded ? securityDeposit : 0;
+  const netTotalPaid = Math.max(0, totalPaid - securityDepositRefundedAmt);
+
+  // Balance due
+  let balanceDue = 0;
+  if (isDepositOnly) {
+    balanceDue = Math.max(0, grandTotal - deposit);
+  } else if (isFinalPaid || isCompleted) {
+    balanceDue = 0;
+  } else {
+    balanceDue = Math.max(0, grandTotal - totalPaid);
+  }
 
   const formattedDate = booking.date
     ? new Date(booking.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -173,6 +204,11 @@ export function getInvoiceCalculations(booking: InvoiceBookingData, isDepositOnl
     discountAmount,
     hallCharge,
     hallAmount,
+    servicesTotal,
+    securityDeposit,
+    isSecurityDepositRefunded,
+    securityDepositRefundedAmt,
+    netTotalPaid,
     grandTotal,
     deposit,
     isDepositPaid,
@@ -323,6 +359,13 @@ export function generateInvoicePDFDoc(
     ]);
   });
 
+  if (calc.securityDeposit > 0) {
+    itemRows.push([
+      `🛡️ Refundable Security Deposit\n• ${calc.isSecurityDepositRefunded ? 'Refunded to Client ✓ (Returned)' : '100% Refundable post-event subject to terms'}`,
+      `£${calc.securityDeposit.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    ]);
+  }
+
   autoTable(doc, {
     startY: cardY + 44,
     margin: { left: margin, right: margin },
@@ -365,6 +408,13 @@ export function generateInvoicePDFDoc(
     ]);
   }
 
+  if (calc.securityDeposit > 0) {
+    summaryRows.push([
+      'Security Deposit (Refundable):',
+      `£${calc.securityDeposit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`,
+    ]);
+  }
+
   summaryRows.push([
     'Grand Total (All inclusive):',
     `£${calc.grandTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`,
@@ -392,10 +442,23 @@ export function generateInvoicePDFDoc(
       'Total Amount Paid to Date:',
       `£${calc.totalPaid.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`,
     ]);
+
+    if (calc.securityDeposit > 0 && calc.isSecurityDepositRefunded) {
+      summaryRows.push([
+        'Security Deposit Refunded (Returned ✓):',
+        `-£${calc.securityDeposit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`,
+      ]);
+      summaryRows.push([
+        'Net Settled Event Total:',
+        `£${calc.servicesTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`,
+      ]);
+    }
   }
 
   const remainingLabel = isDepositOnly ? 'Balance After Deposit:' : 'Remaining Balance Due:';
-  const remainingValue = calc.balanceDue <= 0 ? 'PAID IN FULL ✓' : `£${calc.balanceDue.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`;
+  const remainingValue = calc.balanceDue <= 0
+    ? (calc.securityDeposit > 0 && calc.isSecurityDepositRefunded ? 'PAID IN FULL ✓ (Deposit Refunded)' : 'PAID IN FULL ✓')
+    : `£${calc.balanceDue.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`;
   summaryRows.push([remainingLabel, remainingValue]);
 
   autoTable(doc, {
@@ -916,6 +979,17 @@ export function buildInvoiceHTML(
       `
         )
         .join('')}
+      ${calc.securityDeposit > 0 ? `
+      <tr>
+        <td>
+          <strong>🛡️ Refundable Security Deposit</strong>
+          <div style="font-size:11.5px; color:#059669; margin-top:2px; font-weight:500;">
+            ${calc.isSecurityDepositRefunded ? '✓ Completely Refunded to Client' : '✓ This security deposit amount is completely refundable post-event'}
+          </div>
+        </td>
+        <td class="text-right" style="font-weight:700;">&pound;${calc.securityDeposit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
+      </tr>
+      ` : ''}
     </tbody>
   </table>
 
@@ -936,6 +1010,12 @@ export function buildInvoiceHTML(
         `
             : ''
         }
+        ${calc.securityDeposit > 0 ? `
+        <tr>
+          <td>Security Deposit (Refundable):</td>
+          <td class="text-right">&pound;${calc.securityDeposit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
+        </tr>
+        ` : ''}
         <tr class="grand-total-row">
           <td>Grand Total:</td>
           <td class="text-right">&pound;${calc.grandTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
@@ -975,11 +1055,21 @@ export function buildInvoiceHTML(
           </td>
         </tr>
         <tr style="border-top:1px solid #E5E7EB;">
-          <td style="font-weight:700; color:#111827; padding-top:8px;">Total Paid:</td>
+          <td style="font-weight:700; color:#111827; padding-top:8px;">Total Paid to Date:</td>
           <td class="text-right" style="font-weight:700; color:#059669; padding-top:8px;">
             &pound;${calc.totalPaid.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
           </td>
         </tr>
+        ${calc.securityDeposit > 0 && calc.isSecurityDepositRefunded ? `
+        <tr style="color: #059669; font-weight:600;">
+          <td>Security Deposit Refunded (Returned ✓):</td>
+          <td class="text-right">-&pound;${calc.securityDeposit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
+        </tr>
+        <tr style="font-weight:700; color:#111827; border-top:1px dashed #D1D5DB;">
+          <td>Net Settled Event Total:</td>
+          <td class="text-right">&pound;${calc.servicesTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
+        </tr>
+        ` : ''}
         `
             : ''
         }
@@ -988,7 +1078,7 @@ export function buildInvoiceHTML(
             ${isDepositOnly ? 'Balance After Deposit:' : 'Remaining Balance Due:'}
           </td>
           <td class="text-right" style="color: ${calc.balanceDue <= 0 ? '#059669' : '#C8860A'};">
-            ${calc.balanceDue <= 0 ? '<span class="paid-badge">PAID IN FULL ✓</span>' : `&pound;${calc.balanceDue.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`}
+            ${calc.balanceDue <= 0 ? `<span class="paid-badge">${calc.securityDeposit > 0 && calc.isSecurityDepositRefunded ? 'PAID IN FULL ✓ &bull; DEPOSIT REFUNDED' : 'PAID IN FULL ✓'}</span>` : `&pound;${calc.balanceDue.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`}
           </td>
         </tr>
       </tbody>
@@ -1215,18 +1305,14 @@ export function buildInvoiceWhatsAppMessage(
   const token = generateInvoiceAccessToken(bookingData.id, bookingData.phone, bookingData.createdAt || bookingData.enquiryDate);
   const invoiceOnlineLink = `${origin}/invoice?id=${bookingData.id}&token=${token}${isDepositOnly ? '&type=deposit' : ''}`;
 
-  if (!isDepositOnly) {
-    return `Please find attached your final invoice:
-${invoiceOnlineLink}`;
-  }
-
   const bank = config?.bankDetails || DEFAULT_BANK_DETAILS;
   const calc = getInvoiceCalculations(bookingData, isDepositOnly);
   const firstName = (bookingData.name || 'Client').split(' ')[0];
 
   let msg = `Hi ${firstName}, thank you for choosing *Honeymoon Events* for your ${bookingData.eventType || 'Event'}! 🎉\n\n`;
 
-  msg += `📄 *DEPOSIT INVOICE & ORDER SUMMARY*\n`;
+  const typeHeader = isDepositOnly ? 'DEPOSIT INVOICE & ORDER SUMMARY' : 'FINAL INVOICE & SETTLEMENT SUMMARY';
+  msg += `📄 *${typeHeader}*\n`;
   msg += `*Ref:* #${bookingData.id}\n`;
   msg += `*Event Date:* ${calc.formattedDate} (${bookingData.time || 'TBC'})\n`;
   msg += `*Guests:* ${calc.totalGuests} Guests (${calc.adults} Adults, ${calc.kids4to10} Kids)\n`;
@@ -1234,8 +1320,23 @@ ${invoiceOnlineLink}`;
 
   msg += `💰 *FINANCIAL BREAKDOWN:*\n`;
   msg += `• Grand Total: *£${calc.grandTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })}*\n`;
+  if (calc.securityDeposit > 0) {
+    msg += `• Security Deposit (${calc.isSecurityDepositRefunded ? 'Refunded ✓' : '100% Refundable'}): £${calc.securityDeposit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}\n`;
+  }
   msg += `• Deposit (${calc.isDepositPaid ? 'Paid ✓' : 'Pending'}): £${calc.deposit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}\n`;
-  msg += `• Balance After Deposit: *£${calc.balanceDue.toLocaleString('en-GB', { minimumFractionDigits: 2 })}*\n\n`;
+  if (!isDepositOnly) {
+    msg += `• Final Payment (${calc.isFinalPaid ? 'Paid ✓' : 'Pending'}): £${calc.finalPaymentAmt.toLocaleString('en-GB', { minimumFractionDigits: 2 })}\n`;
+    msg += `• Total Received: £${calc.totalPaid.toLocaleString('en-GB', { minimumFractionDigits: 2 })}\n`;
+    if (calc.securityDeposit > 0 && calc.isSecurityDepositRefunded) {
+      msg += `• Security Deposit Refunded (Returned ✓): -£${calc.securityDeposit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}\n`;
+      msg += `• Net Settled Event Total: £${calc.servicesTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })}\n`;
+    }
+  }
+  const balLabel = isDepositOnly ? 'Balance After Deposit' : 'Remaining Balance Due';
+  const balVal = calc.balanceDue <= 0
+    ? (calc.securityDeposit > 0 && calc.isSecurityDepositRefunded ? 'PAID IN FULL ✓ (Deposit Refunded)' : 'PAID IN FULL ✓')
+    : `£${calc.balanceDue.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`;
+  msg += `• *${balLabel}: ${balVal}*\n\n`;
 
   if (calc.balanceDue > 0) {
     msg += `🏦 *Bank Transfer Details:*\n`;
